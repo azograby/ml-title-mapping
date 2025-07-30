@@ -1,0 +1,125 @@
+{
+  "size": 15,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "title-embedding": {
+                  "vector": "title_embedding",
+                  "min_score": "0.6"
+                }
+              }
+            },
+            "weight": 0.6
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "longDescription-embedding": {
+                  "vector": "longDescription_embedding",
+                  "min_score": "0.4"
+                }
+              }
+            },
+            "weight": 0.4
+          }
+        }
+      ],
+      "should": [
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "eidr": "eidr"
+              }
+            },
+            "boost": 100,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "imdb": "imdb"
+              }
+            },
+            "boost": 500,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "genre": "genre"
+              }
+            },
+            "boost": 100,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "subgenre": "subgenre"
+              }
+            },
+            "boost": 100,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "category": "category"
+              }
+            },
+            "boost": 100,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "subcategory": "subcategory"
+              }
+            },
+            "boost": 100,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "releaseDate": "releaseDate"
+              }
+            },
+            "boost": 500,
+            "weight": 1
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "match": {
+                "duration": "duration"
+              }
+            },
+            "boost": 500,
+            "weight": 1
+          }
+        }
+      ]
+    }
+  }
+}

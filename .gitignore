@@ -39,3 +39,8 @@ next-env.d.ts
 .amplify
 amplify_outputs*
 amplifyconfiguration*
+
+# Amazon Q
+devfile.yaml
+
+.python-version
