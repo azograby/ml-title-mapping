@@ -167,7 +167,7 @@ export default function ConfigPage() {
       </Typography>
       
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6" gutterBottom color="primary">
               Vector Fields ({vectorFields.length})
@@ -183,7 +183,7 @@ export default function ConfigPage() {
           </Paper>
         </Grid>
         
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6" gutterBottom color="secondary">
               Boost Fields ({boostFields.length})

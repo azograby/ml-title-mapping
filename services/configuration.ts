@@ -2,6 +2,7 @@ import { uploadData, downloadData, remove } from 'aws-amplify/storage';
 import { AuthService } from '../services/auth';
 
 export class ConfigurationService {
+  //@ts-ignore
   async saveSearchConfig(config): Promise<void> {
     try {
       const configJson = JSON.stringify(config, null, 2);

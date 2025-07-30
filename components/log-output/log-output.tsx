@@ -35,7 +35,8 @@ export default function LogMessages({ }: LogMessagesProps) {
           limit: 50
       } as ILogMessageQueryOptions;
       LogOutputService.getRecentLogMessages(options).then((result) => {
-          dispatch(logMessagesStoreActions.setMessages(result));
+        // TODO: comment back in later  
+        // dispatch(logMessagesStoreActions.setMessages(result));
           setIsLoading(false);
       }).catch((error) => {
           console.log(error);
