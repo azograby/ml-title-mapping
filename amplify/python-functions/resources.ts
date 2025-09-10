@@ -69,5 +69,24 @@ export class CustomLambdaStack extends Stack {
         },
       }),
     });
-  }
+
+    new lambda.Function(this, 'findRelatedTitlesFunction', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      handler: 'index.lambda_handler',
+      functionName: CommonUtils.getUniqueResourceNameForEnv('find-related-titles'),
+      description: 'Receives title metadata for a single title, and returns related titles by searching Amazon OpenSearch',
+      timeout: Duration.seconds(900),
+      memorySize: 2048,
+      environment: {
+        "ASSET_BUCKET_NAME": assetBucketName || '',
+        "AWS_BRANCH": process.env.AWS_BRANCH || '',
+      },
+      code: lambda.Code.fromAsset(functionDir, {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_9.bundlingImage, // this is just a fallback, the build process must support Docker if you decide to use this
+          local: new LambdaPythonBundler(`${functionDir}/findRelatedTitles`, true) // functionDir is the root of custom-functions. Must specify lambda folder here
+        },
+      }),
+    });
+  };
 }

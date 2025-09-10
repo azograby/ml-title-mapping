@@ -19,9 +19,8 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import StepConnector, { stepConnectorClasses } from '@mui/material/StepConnector';
+import SettingsIcon from '@mui/icons-material/Settings';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { StepIconProps } from '@mui/material/StepIcon';
 import { styled } from '@mui/material/styles';
 
@@ -37,70 +36,34 @@ Amplify.configure(
   }
 );
 
-// Custom connector for the stepper
-const ColorlibConnector = styled(StepConnector)(({ theme }) => ({
-  [`&.${stepConnectorClasses.alternativeLabel}`]: {
-    top: 22,
-  },
-  [`&.${stepConnectorClasses.active}`]: {
-    [`& .${stepConnectorClasses.line}`]: {
-      backgroundImage: 'linear-gradient(95deg, #8a2be2 0%, #00bcd4 100%)',
-    },
-  },
-  [`&.${stepConnectorClasses.completed}`]: {
-    [`& .${stepConnectorClasses.line}`]: {
-      backgroundImage: 'linear-gradient(95deg, #8a2be2 0%, #00bcd4 100%)',
-    },
-  },
-  [`& .${stepConnectorClasses.line}`]: {
-    height: 3,
-    border: 0,
-    backgroundColor: '#2a2a5a',
-    borderRadius: 1,
-  },
-}));
+
 
 // Custom step icon
-const ColorlibStepIconRoot = styled('div')<{
-  ownerState: { completed?: boolean; active?: boolean };
+const StepIconRoot = styled('div')<{
+  ownerState: { stepNumber: number };
 }>(({ theme, ownerState }) => ({
-  backgroundColor: '#2a2a5a',
-  zIndex: 1,
+  backgroundColor: '#8a2be2',
   color: '#fff',
-  width: 50,
-  height: 50,
+  width: 60,
+  height: 60,
   display: 'flex',
   borderRadius: '50%',
   justifyContent: 'center',
   alignItems: 'center',
-  boxShadow: '0 4px 10px 0 rgba(0,0,0,.25)',
-  ...(ownerState.active && {
-    backgroundImage: 'linear-gradient(135deg, #8a2be2 0%, #00bcd4 100%)',
-    boxShadow: '0 4px 10px 0 rgba(138, 43, 226, 0.4)',
-  }),
-  ...(ownerState.completed && {
-    backgroundImage: 'linear-gradient(135deg, #8a2be2 0%, #00bcd4 100%)',
-  }),
+  fontSize: '1.2rem',
+  fontWeight: 'bold',
+  boxShadow: '0 4px 10px 0 rgba(138, 43, 226, 0.3)',
 }));
 
-function ColorlibStepIcon(props: StepIconProps) {
-  const { active, completed, className } = props;
-
-  const icons: { [index: string]: React.ReactElement } = {
-    1: <CloudUploadIcon />,
-    2: <VideoLibraryIcon />,
-    3: <CheckCircleIcon />,
-  };
-
+function CustomStepIcon(props: { stepNumber: number; icon: React.ReactElement }) {
   return (
-    <ColorlibStepIconRoot ownerState={{ completed, active }} className={className}>
-      {icons[String(props.icon)]}
-    </ColorlibStepIconRoot>
+    <StepIconRoot ownerState={{ stepNumber: props.stepNumber }}>
+      {props.stepNumber}
+    </StepIconRoot>
   );
 }
 
 export default function App() {
-  const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ open: boolean; message: string; severity: 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
   const dispatch = useDispatch();
@@ -134,83 +97,47 @@ export default function App() {
 
   const steps = [
     {
-      label: 'Upload Video',
-      description: 'Select and upload your video file for content compliance analysis.',
+      label: 'Ingest Metadata',
+      description: 'Upload Excel sheet with title metadata to begin the mapping process. Data is ingested into Amazon OpenSearch, and a work queue is created in Amazon DynamoDB.',
+      icon: <CloudUploadIcon />
     },
     {
-      label: 'Processing',
-      description: 'Your video is being analyzed for content compliance issues.',
+      label: 'Create Search Configuration',
+      description: 'Set up search configuration with parameters used to determine similarity between titles. Define weights and thresholds for each field to be used in an Amazon OpenSearch query.',
+      icon: <SettingsIcon />
     },
     {
-      label: 'Results',
-      description: 'View detailed compliance results and take appropriate actions.',
+      label: 'Map Titles',
+      description: 'Using k-NN and hybrid search powered by Amazon OpenSearch and your search configuration, find the similar titles for each title. Then, create a grouping based on the titles you select.',
+      icon: <AccountTreeIcon />
     },
   ];
-
-  const handleNext = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
-  };
-
-  const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
-  };
-
-  const handleReset = () => {
-    setActiveStep(0);
-  };
 
   return (
     <div className={styles['home-container']}>
       <h1>Title Mapping Dashboard</h1>
       <p>Welcome to the Title Mapping Solution</p>
       
-      <Box sx={{ maxWidth: 800, margin: '40px auto', p: 3 }}>
+      <Box sx={{ maxWidth: 600, margin: '40px auto', p: 3 }}>
         <Typography variant="h5" sx={{ mb: 4, fontWeight: 500, textAlign: 'center' }}>
-          Video Upload Process
+          Title Mapping Process
         </Typography>
         
-        <Stepper alternativeLabel activeStep={activeStep} connector={<ColorlibConnector />}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {steps.map((step, index) => (
-            <Step key={step.label}>
-              <StepLabel StepIconComponent={ColorlibStepIcon}>
-                <Typography sx={{ fontWeight: 500 }}>{step.label}</Typography>
-              </StepLabel>
-            </Step>
-          ))}
-        </Stepper>
-        
-        {activeStep === steps.length ? (
-          <Paper square elevation={0} sx={{ p: 3, mt: 3, bgcolor: 'rgba(26, 26, 46, 0.6)', borderRadius: 2 }}>
-            <Typography>All steps completed - your video has been analyzed</Typography>
-            <Button onClick={handleReset} sx={{ mt: 1, mr: 1 }}>
-              Start New Analysis
-            </Button>
-          </Paper>
-        ) : (
-          <>
-            <Paper sx={{ p: 3, mt: 3, bgcolor: 'rgba(26, 26, 46, 0.6)', borderRadius: 2 }}>
-              <Typography>{steps[activeStep].description}</Typography>
-              <Box sx={{ mb: 2, mt: 2 }}>
-                <div>
-                  <Button
-                    variant="contained"
-                    onClick={handleNext}
-                    sx={{ mt: 1, mr: 1 }}
-                  >
-                    {activeStep === steps.length - 1 ? 'Finish' : 'Next'}
-                  </Button>
-                  <Button
-                    disabled={activeStep === 0}
-                    onClick={handleBack}
-                    sx={{ mt: 1, mr: 1 }}
-                  >
-                    Back
-                  </Button>
-                </div>
+            <Box key={step.label} sx={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
+              <CustomStepIcon stepNumber={index + 1} icon={step.icon} />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#8a2be2' }}>
+                  {step.label}
+                </Typography>
+                <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.6 }}>
+                  {step.description}
+                </Typography>
               </Box>
-            </Paper>
-          </>
-        )}
+            </Box>
+          ))}
+        </Box>
       </Box>
       
       <Backdrop open={loading} sx={{ zIndex: (theme) => theme.zIndex.drawer + 2 }}>

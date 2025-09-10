@@ -1,32 +1,36 @@
 {
   "size": 15,
+  "explain": true,
   "query": {
     "bool": {
+      "minimum_should_match": "0",
       "must": [
         {
           "function_score": {
             "query": {
               "knn": {
-                "title-embedding": {
-                  "vector": "title_embedding",
-                  "min_score": "0.6"
+                "titleEmbedding": {
+                  "vector": "titleEmbedding",
+                  "min_score": 0.65
                 }
               }
             },
-            "weight": 0.6
+            "weight": 1.4,
+            "_name": "titleEmbedding_function"
           }
         },
         {
           "function_score": {
             "query": {
               "knn": {
-                "longDescription-embedding": {
-                  "vector": "longDescription_embedding",
-                  "min_score": "0.4"
+                "longDescriptionEmbedding": {
+                  "vector": "longDescriptionEmbedding",
+                  "min_score": 0.4
                 }
               }
             },
-            "weight": 0.4
+            "weight": 1.2,
+            "_name": "longDescriptionEmbedding_function"
           }
         }
       ],
@@ -34,89 +38,162 @@
         {
           "function_score": {
             "query": {
-              "match": {
-                "eidr": "eidr"
+              "term": {
+                "eidr": {
+                  "value": "eidr"
+                }
               }
             },
-            "boost": 100,
-            "weight": 1
+            "weight": 5,
+            "_name": "eidr_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "imdb": "imdb"
+              "term": {
+                "imdb": {
+                  "value": "imdb"
+                }
               }
             },
-            "boost": 500,
-            "weight": 1
+            "weight": 5,
+            "_name": "imdb_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "genre": "genre"
+              "term": {
+                "genre": {
+                  "value": "genre"
+                }
               }
             },
-            "boost": 100,
-            "weight": 1
+            "weight": 1.1,
+            "_name": "genre_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "subgenre": "subgenre"
+              "term": {
+                "subgenre": {
+                  "value": "subgenre"
+                }
               }
             },
-            "boost": 100,
-            "weight": 1
+            "weight": 1.1,
+            "_name": "subgenre_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "category": "category"
+              "term": {
+                "category": {
+                  "value": "category"
+                }
               }
             },
-            "boost": 100,
-            "weight": 1
+            "weight": 1.1,
+            "_name": "category_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "subcategory": "subcategory"
+              "term": {
+                "subcategory": {
+                  "value": "subcategory"
+                }
               }
             },
-            "boost": 100,
-            "weight": 1
+            "weight": 1.1,
+            "_name": "subcategory_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "releaseDate": "releaseDate"
+              "term": {
+                "releaseDate": {
+                  "value": "releaseDate"
+                }
               }
             },
-            "boost": 500,
-            "weight": 1
+            "weight": 1.3,
+            "_name": "releaseDate_function"
           }
         },
         {
           "function_score": {
             "query": {
-              "match": {
-                "duration": "duration"
+              "term": {
+                "duration": {
+                  "value": "duration"
+                }
               }
             },
-            "boost": 500,
-            "weight": 1
+            "weight": 3,
+            "_name": "duration_function"
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "directorsEmbedding": {
+                  "vector": "directorsEmbedding",
+                  "min_score": 0.7
+                }
+              }
+            },
+            "weight": 3,
+            "_name": "directorsEmbedding_function"
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "actorsEmbedding": {
+                  "vector": "actorsEmbedding",
+                  "min_score": 0.7
+                }
+              }
+            },
+            "weight": 3,
+            "_name": "actorsEmbedding_function"
+          }
+        },
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "producersEmbedding": {
+                  "vector": "producersEmbedding",
+                  "min_score": 0.6
+                }
+              }
+            },
+            "weight": 1.5,
+            "_name": "producersEmbedding_function"
+          }
+        },
+        
+        {
+          "function_score": {
+            "query": {
+              "knn": {
+                "writersEmbedding": {
+                  "vector": "writersEmbedding",
+                  "min_score": 0.6
+                }
+              }
+            },
+            "weight": 1.5,
+            "_name": "writersEmbedding_function"
           }
         }
       ]

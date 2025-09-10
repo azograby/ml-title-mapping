@@ -49,7 +49,7 @@ def lambda_handler(event, context):
     
     """
     try:
-        print(f"request_data: {event['Records'][0]}")
+        print(f"event: {event['Records'][0]}")
 
         bucket = event['Records'][0]['s3']['bucket']['name']
         file_key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
@@ -77,6 +77,7 @@ def lambda_handler(event, context):
         credentials = boto3.Session().get_credentials()
         auth = AWSV4SignerAuth(credentials, os.environ.get('AWS_REGION'), 'aoss')
         host = 'vh13k6ixzvrd1c0dcv0m.us-west-2.aoss.amazonaws.com'  # serverless collection endpoint, without https://
+        index_name = 'films2'
 
         # create an opensearch client and use the request-signer
         client = OpenSearch(
@@ -87,6 +88,176 @@ def lambda_handler(event, context):
             connection_class=RequestsHttpConnection,
             pool_maxsize=20,
         )
+
+        # create index
+        if not client.indices.exists(index=index_name):
+            client.indices.create(
+                index=index_name,
+                body={
+                    "settings": {
+                        "index.knn": True,
+                        "knn.algo_param.ef_search": 512,
+                        "number_of_shards": 2
+                    },
+                    "mappings": {
+                        "properties": {
+                            "actorsEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "directorsEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "longDescriptionEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "producersEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "titleEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "writersEmbedding": {
+                                "type": "knn_vector",
+                                "dimension": 1024,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "l2",
+                                    "engine": "faiss",
+                                    "parameters": {
+                                        "ef_construction": 15000, "m": 100
+                                    }
+                                }
+                            },
+                            "actors": {
+                                "type": "keyword"
+                            },
+                            "category": {
+                                "type": "keyword"
+                            },
+                            "contentType": {
+                                "type": "keyword"
+                            },
+                            "directors": {
+                                "type": "keyword"
+                            },
+                            "duration": {
+                                "type": "keyword"
+                            },
+                            "eidr": {
+                                "type": "keyword"
+                            },
+                            "genre": {
+                                "type": "keyword"
+                            },
+                            "imdb": {
+                                "type": "keyword"
+                            },
+                            "language": {
+                                "type": "keyword"
+                            },
+                            "longDescription": {
+                                "type": "keyword"
+                            },
+                            "mamUUID": {
+                                "type": "keyword"
+                            },
+                            "partner": {
+                                "type": "keyword"
+                            },
+                            "partnerID": {
+                                "type": "keyword"
+                            },
+                            "producers": {
+                                "type": "keyword"
+                            },
+                            "productionCompany": {
+                                "type": "keyword"
+                            },
+                            "productionCountry": {
+                                "type": "keyword"
+                            },
+                            "productionYear": {
+                                "type": "keyword"
+                            },
+                            "rating": {
+                                "type": "keyword"
+                            },
+                            "ratingDescriptors": {
+                                "type": "keyword"
+                            },
+                            "region": {
+                                "type": "keyword"
+                            },
+                            "releaseDate": {
+                                "type": "keyword"
+                            },
+                            "shortDescription": {
+                                "type": "keyword"
+                            },
+                            "status": {
+                                "type": "keyword"
+                            },
+                            "subcategory": {
+                                "type": "keyword"
+                            },
+                            "subgenre": {
+                                "type": "keyword"
+                            },
+                            "title": {
+                                "type": "keyword"
+                            },
+                            "writers": {
+                                "type": "keyword"
+                            }
+                        }
+                    }
+                }
+            )
 
         try:
             df = pd.read_excel(file_path, na_filter = False)
@@ -121,10 +292,10 @@ def lambda_handler(event, context):
                 production_company = str(row.get('Production Company', ''))
                 rating = str(row.get('Rating', ''))
                 rating_descriptors = str(row.get('ratingDescriptors', ''))
-                producers = str(row.get('Producers', ''))
-                directors = str(row.get('Directors', ''))
-                writers = str(row.get('Writers', ''))
-                actors = str(row.get('Actors', ''))
+                producers = remove_duplicate_names(str(row.get('Producers', '')))
+                directors = remove_duplicate_names(str(row.get('Directors', '')))
+                writers = remove_duplicate_names(str(row.get('Writers', '')))
+                actors = remove_duplicate_names(str(row.get('Actors', '')))
                 short_description = str(row.get('Short Description', ''))
                 long_description = str(row.get('Long Description', ''))
                 
@@ -139,29 +310,50 @@ def lambda_handler(event, context):
                 )
                 title_embedding = json.loads(title_response['body'].read()).get('embeddings', [])[0]
 
-                # Generate embedding for film type
-                film_type = f"{genre}-{subgenre}-{category}-{subcategory}"
-                film_type_response = bedrock_runtime.invoke_model(
+                # Generate embedding for actors
+                actors_response = bedrock_runtime.invoke_model(
                     modelId="cohere.embed-multilingual-v3",
                     body=json.dumps({
                         "input_type": "search_document",
-                        "texts": [film_type],
+                        "texts": [actors],
                         "truncate": "NONE"
                     })
                 )
-                film_type_embedding = json.loads(film_type_response['body'].read()).get('embeddings', [])[0]
+                actors_embedding = json.loads(actors_response['body'].read()).get('embeddings', [])[0]
 
-                # Generate embedding for release date
-                release_date_response = bedrock_runtime.invoke_model(
+                # Generate embedding for producers
+                producers_response = bedrock_runtime.invoke_model(
                     modelId="cohere.embed-multilingual-v3",
                     body=json.dumps({
                         "input_type": "search_document",
-                        "texts": [release_date],
+                        "texts": [producers],
                         "truncate": "NONE"
                     })
                 )
-                release_date_embedding = json.loads(release_date_response['body'].read()).get('embeddings', [])[0]
-                
+                producers_embedding = json.loads(producers_response['body'].read()).get('embeddings', [])[0]
+
+                # Generate embedding for directors
+                directors_response = bedrock_runtime.invoke_model(
+                    modelId="cohere.embed-multilingual-v3",
+                    body=json.dumps({
+                        "input_type": "search_document",
+                        "texts": [directors],
+                        "truncate": "NONE"
+                    })
+                )
+                directors_embedding = json.loads(directors_response['body'].read()).get('embeddings', [])[0]
+
+                # Generate embedding for writers
+                writers_response = bedrock_runtime.invoke_model(
+                    modelId="cohere.embed-multilingual-v3",
+                    body=json.dumps({
+                        "input_type": "search_document",
+                        "texts": [writers],
+                        "truncate": "NONE"
+                    })
+                )
+                writers_embedding = json.loads(writers_response['body'].read()).get('embeddings', [])[0]
+
                 # Generate embedding for description
                 long_desc_response = bedrock_runtime.invoke_model(
                     modelId="cohere.embed-multilingual-v3",
@@ -176,18 +368,20 @@ def lambda_handler(event, context):
                 # Prepare document for OpenSearch
                 document = {
                     #embedding fields
-                    "title-embedding": title_embedding,
-                    "film-type-embedding": film_type_embedding,
-                    "release-date-embedding": release_date_embedding,
-                    "long-description-embedding": long_desc_embedding,
+                    "titleEmbedding": title_embedding,
+                    "actorsEmbedding": actors_embedding,
+                    "directorsEmbedding": directors_embedding,
+                    "producersEmbedding": producers_embedding,
+                    "writersEmbedding": writers_embedding,
+                    "longDescriptionEmbedding": long_desc_embedding,
 
                     #other metadata fields
-                    "mam-uuid": mam_UUID,
-                    "content-type": content_type,
+                    "mamUUID": mam_UUID,
+                    "contentType": content_type,
                     "status": status,
                     "region": region,
                     "partner": partner,
-                    "partner-ID": partner_ID,
+                    "partnerID": partner_ID,
                     "title": title,
                     "language": language,
                     "eidr": eidr,
@@ -196,30 +390,30 @@ def lambda_handler(event, context):
                     "subgenre": subgenre,
                     "category": category,
                     "subcategory": subcategory,
-                    "release-date": release_date,
+                    "releaseDate": release_date,
                     "duration": duration,
-                    "production-country": production_country,
-                    "production-year": production_year,
-                    "production-company": production_company,
+                    "productionCountry": production_country,
+                    "productionYear": production_year,
+                    "productionCompany": production_company,
                     "rating": rating,
-                    "rating-descriptors": rating_descriptors,
+                    "ratingDescriptors": rating_descriptors,
                     "producers": producers,
                     "directors": directors,
                     "writers": writers,
                     "actors": actors,
-                    "short-description": short_description,
-                    "long-description": long_description,
+                    "shortDescription": short_description,
+                    "longDescription": long_description,
                 }
                 
                 # Post to OpenSearch
-                # response = client.index(
-                #     index = 'films',
-                #     body = document,
-                # )
+                response = client.index(
+                    index = index_name,
+                    body = document,
+                )
 
-                # if response.get('result') in ['created']:
-                #     print(f"Successfully indexed document for row {index}")
-                #     successful_posts += 1
+                if response.get('result') in ['created']:
+                    print(f"Successfully indexed document for row {index}")
+                    successful_posts += 1
                 # else:
                 #     print(f"Failed to index document for row {index}: {response.text}")
                 #     print(f"Document content: {document}")
@@ -266,7 +460,9 @@ def lambda_handler(event, context):
                     return
             except Exception as e:
                 print(f"Error processing row {index}: {e}")
+                print(row)
 
+        client.indices.refresh(index=index_name)
         print(f"Successfully indexed {successful_posts} out of {len(df)} documents to OpenSearch")        
 
         # Clean up temporary files
@@ -291,6 +487,24 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'error': str(e)
         }
+
+def remove_duplicate_names(csv_string):
+    """
+    Removes duplicate names from a comma-separated string while preserving order.
+    """
+    if not csv_string or not csv_string.strip():
+        return csv_string
+    
+    names = [name.strip() for name in csv_string.split(',') if name.strip()]
+    seen = set()
+    unique_names = []
+    
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            unique_names.append(name)
+    
+    return ', '.join(unique_names)
 
 def safe_int_conversion(value):
     """

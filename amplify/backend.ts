@@ -11,6 +11,7 @@ import { EventType } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as opensearchserverless from 'aws-cdk-lib/aws-opensearchserverless';
 import { CommonUtils } from './utils';
 
 import {
@@ -50,6 +51,57 @@ new aws_ssm.StringParameter(backend.stack, 'FilmTitlesProcessingQueueTableParam'
 });
 
 const cfnIngestTitlesFunction = customFunctionsStack.node.findChild('ingestTitlesFunction') as lambda.Function;
+const cfnFindRelatedTitlesFunction = customFunctionsStack.node.findChild('findRelatedTitlesFunction') as lambda.Function;
+
+const appPrefix = vars.APP_PREFIX;
+
+// OpenSearch Serverless collection
+const networkPolicy = new opensearchserverless.CfnSecurityPolicy(backend.stack, 'NetworkPolicy', {
+  name: 'title-collection-network-policy',
+  type: 'network',
+  policy: JSON.stringify([{
+    "Rules": [{
+      "Resource": ["collection/title-collection"],
+      "ResourceType": "dashboard"
+    }, {
+      "Resource": ["collection/title-collection"],
+      "ResourceType": "collection"
+    }],
+    "AllowFromPublic": true
+  }])
+});
+
+const dataAccessPolicy = new opensearchserverless.CfnAccessPolicy(backend.stack, 'DataAccessPolicy', {
+  name: 'title-collection-data-policy',
+  type: 'data',
+  policy: JSON.stringify([{
+    "Rules": [{
+      "Resource": ["collection/title-collection"],
+      "Permission": ["aoss:CreateCollectionItems", "aoss:DeleteCollectionItems", "aoss:UpdateCollectionItems", "aoss:DescribeCollectionItems", "aoss:*"],
+      "ResourceType": "collection"
+    }, {
+      "Resource": ["index/title-collection/*"],
+      "Permission": ["aoss:CreateIndex", "aoss:DeleteIndex", "aoss:UpdateIndex", "aoss:DescribeIndex", "aoss:ReadDocument", "aoss:WriteDocument", "aoss:*"],
+      "ResourceType": "index"
+    }],
+    "Principal": [cfnIngestTitlesFunction.functionArn, cfnFindRelatedTitlesFunction.functionArn],
+    "Description": "Rule 1"
+  }])
+});
+
+const titleCollection = new opensearchserverless.CfnCollection(backend.stack, 'TitleCollection', {
+  name: 'title-collection',
+  type: 'VECTORSEARCH'
+});
+
+titleCollection.addDependency(networkPolicy);
+titleCollection.addDependency(dataAccessPolicy);
+
+new aws_ssm.StringParameter(backend.stack, 'OpenSearchEndpointParam', {
+  parameterName: `/${process.env.AWS_BRANCH}/OPENSEARCH_ENDPOINT`,
+  stringValue: titleCollection.attrCollectionEndpoint
+});
+
 const s3Bucket = backend.storage.resources.bucket;
 
 s3Bucket.addEventNotification(
@@ -60,10 +112,7 @@ s3Bucket.addEventNotification(
   }
 );
 
-const appPrefix = vars.APP_PREFIX;
-
 // TODO: add cognito auth later, right now the api doesn't use auth
-
 const apiStack = backend.createStack(appPrefix + "-api-stack");
 
 const restAPI = new RestApi(apiStack, "RestApi", {
@@ -79,114 +128,6 @@ const restAPI = new RestApi(apiStack, "RestApi", {
   },
 });
 
-// create a new Lambda integration
-// const assetsLambdaIntegration = new LambdaIntegration(
-//   backend.assetsProxyFunction.resources.lambda
-// );
-
-// create a new Cognito User Pools authorizer
-// const cognitoAuth = new CognitoUserPoolsAuthorizer(apiStack, "CognitoAuth", {
-//   cognitoUserPools: [backend.auth.resources.userPool],
-// });
-
-// create a new resource path with IAM authorization
-// const assetsPath = restAPI.root.addResource("assets", {
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//   },
-//   defaultCorsPreflightOptions: {
-//     allowOrigins: ["*"],
-//     allowMethods: Cors.ALL_METHODS,
-//     allowHeaders: Cors.DEFAULT_HEADERS,
-//   },
-// });
-
-// assetsPath.addMethod("GET", assetsLambdaIntegration, {
-//   authorizationType: AuthorizationType.NONE
-//     // authorizationType: AuthorizationType.COGNITO,
-//     // authorizer: cognitoAuth,
-//   });
-// assetsPath.addMethod("POST", assetsLambdaIntegration, {
-//   authorizationType: AuthorizationType.COGNITO,
-//   authorizer: cognitoAuth,
-// });
-// assetsPath.addMethod("DELETE", assetsLambdaIntegration, {
-//   authorizationType: AuthorizationType.COGNITO,
-//   authorizer: cognitoAuth,
-// });
-// assetsPath.addMethod("PUT", assetsLambdaIntegration, {
-//   authorizationType: AuthorizationType.COGNITO,
-//   authorizer: cognitoAuth,
-// });
-
-// add a proxy resource path to the API
-// assetsPath.addProxy({
-//   anyMethod: true,
-//   defaultIntegration: assetsLambdaIntegration,
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//       // authorizer: cognitoAuth,
-//       requestParameters: {
-//         "method.request.path.proxy": true,
-//       },
-//     },
-//     defaultCorsPreflightOptions: {
-//       allowOrigins: ["*"],
-//       allowMethods: Cors.ALL_METHODS,
-//       allowHeaders: Cors.DEFAULT_HEADERS,
-//     },
-// });
-
-// create a new resource path with Cognito authorization
-// const booksPath = restAPI.root.addResource("cognito-auth-path");
-// booksPath.addMethod("GET", lambdaIntegration, {
-//   authorizationType: AuthorizationType.COGNITO,
-//   authorizer: cognitoAuth,
-// });
-
-// create a new IAM policy to allow Invoke access to the API
-// const apiRestPolicy = new Policy(apiStack, "RestApiPolicy", {
-//   statements: [
-//     new PolicyStatement({
-//       actions: ["execute-api:Invoke"],
-//       resources: [
-//         `${restAPI.arnForExecuteApi("*", "/assets", "dev")}`,
-//         `${restAPI.arnForExecuteApi("*", "/assets/*", "dev")}`,
-//         `${restAPI.arnForExecuteApi("*", "/cognito-auth-path", "dev")}`, // TODO: dynamically add env
-//       ],
-//     }),
-//   ],
-// });
-
-// // attach the policy to the authenticated and unauthenticated IAM roles
-// backend.auth.resources.authenticatedUserIamRole.attachInlinePolicy(
-//   apiRestPolicy
-// );
-// backend.auth.resources.unauthenticatedUserIamRole.attachInlinePolicy(
-//   apiRestPolicy
-// );
-
-// //async function, returns immediately and updates status to job status table
-// const generateVideoAnalysisNovaLambdaIntegration = new LambdaIntegration(
-//   backend.generateVideoAnalysisNovaFunction.resources.lambda,
-//   {
-//     requestParameters: {
-//       "integration.request.header.X-Amz-Invocation-Type": "'Event'",
-//     },
-//     integrationResponses: [
-//       {
-//         statusCode: "200",
-//         responseParameters: {
-//           'method.response.header.Access-Control-Allow-Origin': "'*'",
-//           'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Invocation-Type'",
-//           'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,POST'",
-//         },
-//       },
-//     ],
-//     proxy: false,
-//   }
-// );
-
 const assetsPath = restAPI.root.addResource('assets', {
   defaultMethodOptions: {
     authorizationType: AuthorizationType.NONE,
@@ -198,98 +139,24 @@ const assetsPath = restAPI.root.addResource('assets', {
   },
 });
 
-// const videoAnalysisClaudeHaikuPath = videoAnalysisPath.addResource("claude-haiku", {
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//   },
-//   defaultCorsPreflightOptions: {
-//     allowOrigins: ["*"],
-//     allowMethods: Cors.ALL_METHODS,
-//     allowHeaders: Cors.DEFAULT_HEADERS,
-//   },
-// });
+const relatedTitlesPath = restAPI.root.addResource("related-titles", {
+  defaultMethodOptions: {
+    authorizationType: AuthorizationType.NONE,
+  },
+  defaultCorsPreflightOptions: {
+    allowOrigins: ["*"],
+    allowMethods: Cors.ALL_METHODS,
+    allowHeaders: Cors.DEFAULT_HEADERS,
+  },
+});
 
-// const generateVideoAnalysisPath = restAPI.root.addResource("generate-video-analysis", {
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//   },
-//   defaultCorsPreflightOptions: {
-//     allowOrigins: ["*"],
-//     allowMethods: Cors.ALL_METHODS,
-//     allowHeaders: 
-//     [
-//       ...Cors.DEFAULT_HEADERS,
-//       'X-Amz-Invocation-Type'
-//     ],
-//   },
-// });
+const relatedTitlesLambdaIntegration = new LambdaIntegration(
+  cfnFindRelatedTitlesFunction
+);
 
-// const generateVideoAnalysisNovaPath = generateVideoAnalysisPath.addResource("nova", {
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//   },
-//   defaultCorsPreflightOptions: {
-//     allowOrigins: ["*"],
-//     allowMethods: Cors.ALL_METHODS,
-//     allowHeaders: 
-//     [
-//       ...Cors.DEFAULT_HEADERS,
-//       'X-Amz-Invocation-Type'
-//     ],
-//   },
-// });
-
-// const generateVideoAnalysisClaudeHaikuPath = generateVideoAnalysisPath.addResource("claude-haiku", {
-//   defaultMethodOptions: {
-//     authorizationType: AuthorizationType.NONE,
-//   },
-//   defaultCorsPreflightOptions: {
-//     allowOrigins: ["*"],
-//     allowMethods: Cors.ALL_METHODS,
-//     allowHeaders: 
-//     [
-//       ...Cors.DEFAULT_HEADERS,
-//       'X-Amz-Invocation-Type'
-//     ],
-//   },
-// });
-
-// // Add POST method for video analysis
-// videoAnalysisNovaPath.addMethod("POST", analyzeVideoNovaLambdaIntegration, {
-//   authorizationType: AuthorizationType.NONE
-// });
-
-// generateVideoAnalysisNovaPath.addMethod("POST", generateVideoAnalysisNovaLambdaIntegration, {
-//   authorizationType: AuthorizationType.NONE,
-//   methodResponses: [
-//       {
-//         statusCode: "200",
-//         responseParameters: {
-//           'method.response.header.Access-Control-Allow-Origin': true,
-//           'method.response.header.Access-Control-Allow-Headers': true,
-//           'method.response.header.Access-Control-Allow-Methods': true,
-//         },
-//       },
-//     ],
-// });
-
-// videoAnalysisClaudeHaikuPath.addMethod("POST", analyzeVideoClaudeHaikuLambdaIntegration, {
-//   authorizationType: AuthorizationType.NONE
-// });
-
-// generateVideoAnalysisClaudeHaikuPath.addMethod("POST", generateVideoAnalysisClaudeHaikuLambdaIntegration, {
-//   authorizationType: AuthorizationType.NONE,
-//   methodResponses: [
-//       {
-//         statusCode: "200",
-//         responseParameters: {
-//           'method.response.header.Access-Control-Allow-Origin': true,
-//           'method.response.header.Access-Control-Allow-Headers': true,
-//           'method.response.header.Access-Control-Allow-Methods': true,
-//         },
-//       },
-//     ],
-// });
+relatedTitlesPath.addMethod("POST", relatedTitlesLambdaIntegration, {
+  authorizationType: AuthorizationType.NONE,
+});
 
 // Add IAM permissions for Bedrock
 const bedrockPolicy = new PolicyStatement({
@@ -332,26 +199,22 @@ const ssmPolicy = new PolicyStatement({
   resources: ["*"], // You might want to restrict this to specific model ARNs in production
 });
 
-// backend.analyzeVideoNovaFunction.resources.lambda.addToRolePolicy(bedrockPolicy);
-// backend.analyzeVideoNovaFunction.resources.lambda.addToRolePolicy(s3Policy);
-// backend.analyzeVideoNovaFunction.resources.lambda.addToRolePolicy(dynamoProcessingMessagesPolicy);
-// backend.generateVideoAnalysisNovaFunction.resources.lambda.addToRolePolicy(bedrockPolicy);
-// backend.generateVideoAnalysisNovaFunction.resources.lambda.addToRolePolicy(s3Policy);
-// backend.generateVideoAnalysisNovaFunction.resources.lambda.addToRolePolicy(dynamoVideoAnalysisResultsPolicy);
-// backend.generateVideoAnalysisNovaFunction.resources.lambda.addToRolePolicy(dynamoDeepProcessingApprovalsPolicy);
-// backend.generateVideoAnalysisNovaFunction.resources.lambda.addToRolePolicy(dynamoJobStatusPolicy);
-// cfnGenerateVideoAnalysisClaudeHaikuFunction.addToRolePolicy(bedrockPolicy);
-// cfnGenerateVideoAnalysisClaudeHaikuFunction.addToRolePolicy(s3Policy);
-// cfnGenerateVideoAnalysisClaudeHaikuFunction.addToRolePolicy(dynamoVideoAnalysisResultsPolicy);
-// cfnGenerateVideoAnalysisClaudeHaikuFunction.addToRolePolicy(ssmPolicy);
-// cfnGenerateVideoAnalysisClaudeHaikuFunction.addToRolePolicy(dynamoJobStatusPolicy);
-// cfnGeneratePlaybackAssetsFunction.addToRolePolicy(s3Policy);
-// cfnGeneratePlaybackAssetsFunction.addToRolePolicy(s3UploadPolicy);
+const opensearchPolicy = new PolicyStatement({
+  actions: ["aoss:APIAccessAll", "aoss:DashboardsAccessAll"],
+  resources: ["*"], // You might want to restrict this to specific model ARNs in production
+});
 
 cfnIngestTitlesFunction.addToRolePolicy(dynamoJobStatusPolicy);
 cfnIngestTitlesFunction.addToRolePolicy(ssmPolicy);
 cfnIngestTitlesFunction.addToRolePolicy(s3Policy);
 cfnIngestTitlesFunction.addToRolePolicy(bedrockPolicy);
+cfnIngestTitlesFunction.addToRolePolicy(opensearchPolicy);
+
+cfnFindRelatedTitlesFunction.addToRolePolicy(dynamoJobStatusPolicy);
+cfnFindRelatedTitlesFunction.addToRolePolicy(ssmPolicy);
+cfnFindRelatedTitlesFunction.addToRolePolicy(s3Policy);
+cfnFindRelatedTitlesFunction.addToRolePolicy(bedrockPolicy);
+cfnFindRelatedTitlesFunction.addToRolePolicy(opensearchPolicy);
 
 // add outputs to the configuration file
 backend.addOutput({

@@ -1,9 +1,3 @@
-// export interface ITitleProcessingQueueItem {
-//     mamUUID: string;
-//     title: string;
-//     createdAt: string;
-// }
-
 export interface ITitle {
     mamUUID: string;
     contentType: string;
@@ -33,4 +27,19 @@ export interface ITitle {
     shortDescription: string;
     longDescription: string;
     createdAt: string;
+}
+
+export interface IRelatedTitle {
+    _score: number;
+    _source: ITitle
+}
+
+export interface IFindRelatedTitlesRequest extends ITitle {
+    opensearchQuery: any;
+}
+
+export interface IFindRelatedTitlesResponse {
+    totalResults: number;
+    maxScore: number;
+    titles: IRelatedTitle[]
 }

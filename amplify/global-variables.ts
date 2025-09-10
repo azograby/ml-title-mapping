@@ -44,7 +44,7 @@ export const vars = {
     APP_PREFIX: appPrefix,
     ASSET_S3_BUCKET_NAME: appPrefix + '-assets',
     API_PATHS: {
-        
+        FIND_RELATED_TITLES: 'related-titles'
     },
     PAGE_ROUTES: {
         HOME: {

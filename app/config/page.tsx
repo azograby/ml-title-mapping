@@ -8,10 +8,15 @@ import { useSelector, useDispatch } from 'react-redux';
 import { ISearchConfigStateReducer } from '../../store/search-config';
 import { searchConfigStoreActions } from '../../store/search-config';
 
-type FieldType = 'vector' | 'boost' | 'none';
+type FieldType = 'vector' | 'exact' | 'none';
+type PlacementType = 'must' | 'should';
 
 interface FieldConfig {
   [key: string]: FieldType;
+}
+
+interface FieldPlacement {
+  [key: string]: PlacementType;
 }
 
 interface VectorConfig {
@@ -19,8 +24,7 @@ interface VectorConfig {
   weight: number;
 }
 
-interface BoostConfig {
-  boost: number;
+interface ExactConfig {
   weight: number;
 }
 
@@ -38,15 +42,21 @@ export default function ConfigPage() {
     titleFields.reduce((acc, field) => ({ ...acc, [field]: 'none' }), {})
   );
   
+  const [fieldPlacement, setFieldPlacement] = useState<FieldPlacement>(
+    titleFields.reduce((acc, field) => ({ ...acc, [field]: 'must' }), {})
+  );
+  
   const [vectorConfigs, setVectorConfigs] = useState<{ [key: string]: VectorConfig }>(
     titleFields.reduce((acc, field) => ({ ...acc, [field]: { minScore: 0.0, weight: 1.0 } }), {})
   );
   
-  const [boostConfigs, setBoostConfigs] = useState<{ [key: string]: BoostConfig }>(
-    titleFields.reduce((acc, field) => ({ ...acc, [field]: { boost: 1.0, weight: 1.0 } }), {})
+  const [exactConfigs, setExactConfigs] = useState<{ [key: string]: ExactConfig }>(
+    titleFields.reduce((acc, field) => ({ ...acc, [field]: { weight: 1.0 } }), {})
   );
   
   const [maxResults, setMaxResults] = useState<number>(10);
+  const [explain, setExplain] = useState<boolean>(false);
+  const [minOptionalFieldMatches, setMinOptionalFieldMatches] = useState<number>(0);
   const [saving, setSaving] = useState<boolean>(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
@@ -58,39 +68,45 @@ export default function ConfigPage() {
   useEffect(() => {
     if (searchConfig) {
       setMaxResults(searchConfig.size || 10);
+      setExplain(searchConfig.explain || false);
+      setMinOptionalFieldMatches(parseInt(searchConfig.query?.bool?.minimum_should_match) || 0);
       
-      // Parse must queries (vector fields)
       const newFieldConfig: FieldConfig = titleFields.reduce((acc, field) => ({ ...acc, [field]: 'none' }), {});
+      const newFieldPlacement: FieldPlacement = titleFields.reduce((acc, field) => ({ ...acc, [field]: 'must' }), {});
       const newVectorConfigs: { [key: string]: VectorConfig } = {};
-      const newBoostConfigs: { [key: string]: BoostConfig } = {};
+      const newExactConfigs: { [key: string]: ExactConfig } = {};
       
-      searchConfig.query?.bool?.must?.forEach((mustQuery: any) => {
-        const knnField = Object.keys(mustQuery.function_score.query.knn)[0];
-        const fieldName = knnField.replace('-embedding', '');
-        if (titleFields.includes(fieldName)) {
-          newFieldConfig[fieldName] = 'vector';
-          newVectorConfigs[fieldName] = {
-            minScore: parseFloat(mustQuery.function_score.query.knn[knnField].min_score) || 0,
-            weight: mustQuery.function_score.weight || 1
-          };
-        }
-      });
-      
-      // Parse should queries (boost fields)
-      searchConfig.query?.bool?.should?.forEach((shouldQuery: any) => {
-        const matchField = Object.keys(shouldQuery.function_score.query.match)[0];
-        if (titleFields.includes(matchField)) {
-          newFieldConfig[matchField] = 'boost';
-          newBoostConfigs[matchField] = {
-            boost: shouldQuery.function_score.boost || 1,
-            weight: shouldQuery.function_score.weight || 1
-          };
-        }
+      // Parse must and should queries
+      ['must', 'should'].forEach(queryType => {
+        searchConfig.query?.bool?.[queryType]?.forEach((query: any) => {
+          if (query.function_score?.query?.knn) {
+            const knnField = Object.keys(query.function_score.query.knn)[0];
+            const fieldName = knnField.replace('Embedding', '');
+            if (titleFields.includes(fieldName)) {
+              newFieldConfig[fieldName] = 'vector';
+              newFieldPlacement[fieldName] = queryType as PlacementType;
+              newVectorConfigs[fieldName] = {
+                minScore: parseFloat(query.function_score.query.knn[knnField].min_score) || 0,
+                weight: query.function_score.weight || 1
+              };
+            }
+          } else if (query.function_score?.query?.term) {
+            const termField = Object.keys(query.function_score.query.term)[0];
+            if (titleFields.includes(termField)) {
+              newFieldConfig[termField] = 'exact';
+              newFieldPlacement[termField] = queryType as PlacementType;
+              newExactConfigs[termField] = {
+                weight: query.function_score.weight || 1
+              };
+            }
+          }
+        });
       });
       
       setFieldConfig(newFieldConfig);
+      setFieldPlacement(newFieldPlacement);
       setVectorConfigs(prev => ({ ...prev, ...newVectorConfigs }));
-      setBoostConfigs(prev => ({ ...prev, ...newBoostConfigs }));
+      setExactConfigs(prev => ({ ...prev, ...newExactConfigs }));
     }
   }, [searchConfig]);
 
@@ -103,26 +119,74 @@ export default function ConfigPage() {
           [field]: { minScore: 0.0, weight: 1.0 }
         }));
       }
-      if (value !== 'boost') {
-        setBoostConfigs(prev => ({
+      if (value !== 'exact') {
+        setExactConfigs(prev => ({
           ...prev,
-          [field]: { boost: 1.0, weight: 1.0 }
+          [field]: { weight: 1.0 }
         }));
       }
     }
   };
 
   const vectorFields = titleFields.filter(field => fieldConfig[field] === 'vector');
-  const boostFields = titleFields.filter(field => fieldConfig[field] === 'boost');
+  const exactFields = titleFields.filter(field => fieldConfig[field] === 'exact');
   
   const generateOpenSearchQuery = () => {
-    return CommonUtils.generateOpenSearchQuery(
-      vectorFields,
-      boostFields,
-      vectorConfigs,
-      boostConfigs,
-      maxResults
-    );
+    const mustQueries: any[] = [];
+    const shouldQueries: any[] = [];
+    
+    // Add vector fields
+    vectorFields.forEach(field => {
+      const query = {
+        function_score: {
+          query: {
+            knn: {
+              [`${field}Embedding`]: {
+                vector: `${field}Embedding`,
+                min_score: vectorConfigs[field].minScore.toString()
+              }
+            }
+          },
+          weight: vectorConfigs[field].weight
+        }
+      };
+      
+      if (fieldPlacement[field] === 'must') {
+        mustQueries.push(query);
+      } else {
+        shouldQueries.push(query);
+      }
+    });
+    
+    // Add exact fields
+    exactFields.forEach(field => {
+      const query = {
+        function_score: {
+          query: {
+            term: { [field]: field }
+          },
+          weight: exactConfigs[field].weight
+        }
+      };
+      
+      if (fieldPlacement[field] === 'must') {
+        mustQueries.push(query);
+      } else {
+        shouldQueries.push(query);
+      }
+    });
+    
+    return {
+      size: maxResults,
+      explain: explain,
+      query: {
+        bool: {
+          minimum_should_match: minOptionalFieldMatches.toString(),
+          must: mustQueries,
+          should: shouldQueries
+        }
+      }
+    };
   };
   
   const handleSave = async () => {
@@ -163,7 +227,7 @@ export default function ConfigPage() {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        Similarity Search Configuration
+        Title Similarity Search Configuration
       </Typography>
       
       <Grid container spacing={3}>
@@ -173,7 +237,7 @@ export default function ConfigPage() {
               Vector Fields ({vectorFields.length})
             </Typography>
             <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic' }}>
-              Vector fields are required to meet the minimum search values for "Min Score" to be included in the results. These are hard cutoffs.
+              Vector fields use embeddings to perform similarity search using k-NN. Vector fields must meet the "minimum similarity score" value to be included in the results. Records that are matched will have their score multiplied by the "Weight" field.
             </Typography>
             {vectorFields.map(field => (
               <Typography key={field} variant="body2" sx={{ ml: 2 }}>
@@ -186,12 +250,12 @@ export default function ConfigPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6" gutterBottom color="secondary">
-              Boost Fields ({boostFields.length})
+              Exact Fields ({exactFields.length})
             </Typography>
             <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic' }}>
-              Boost fields are fields that you should not rely on for similarity, but if they exist, they will be scored higher in accordance with the Boost and Weight values.
+              Exact fields perform keyword matching that must match EXACTLY (case-sensitive) to be included in the results. Records that are matched will have their score multiplied by the "Weight" field.
             </Typography>
-            {boostFields.map(field => (
+            {exactFields.map(field => (
               <Typography key={field} variant="body2" sx={{ ml: 2 }}>
                 • {field}
               </Typography>
@@ -204,19 +268,44 @@ export default function ConfigPage() {
         <Typography variant="h6" gutterBottom>
           Search Configuration
         </Typography>
-        <TextField
-          label="Max Results"
-          type="number"
-          value={maxResults}
-          onChange={(e) => setMaxResults(parseInt(e.target.value) || 10)}
-          inputProps={{ min: 1, step: 1 }}
-          sx={{ width: 150 }}
-        />
+        <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic' }}>
+          Configure global search parameters including maximum results to return, set a minimum number of optional fields to match before returning a result, and request explanations of how the results were determined.
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            label="Max Results"
+            type="number"
+            value={maxResults}
+            onChange={(e) => setMaxResults(parseInt(e.target.value) || 10)}
+            inputProps={{ min: 1, step: 1 }}
+            sx={{ width: 150 }}
+          />
+          <TextField
+            label="Min. Optional Field Matches"
+            type="number"
+            value={minOptionalFieldMatches}
+            onChange={(e) => setMinOptionalFieldMatches(parseInt(e.target.value) || 0)}
+            inputProps={{ min: 0, step: 1 }}
+            sx={{ width: 200 }}
+          />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              id="explain"
+              checked={explain}
+              onChange={(e) => setExplain(e.target.checked)}
+            />
+            <label htmlFor="explain" style={{ marginLeft: 8 }}>Explain Search Results</label>
+          </Box>
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 3, mt: 3 }}>
         <Typography variant="h6" gutterBottom>
           Field Configuration
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic' }}>
+          Configure each field's search type (Vector, Exact, or None), and determine if that field has to match (Required) to be included in the results, or does not (Optional).
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
           {titleFields.map(field => (
@@ -235,13 +324,28 @@ export default function ConfigPage() {
                     <ToggleButton value="vector" color="primary">
                       Vector
                     </ToggleButton>
-                    <ToggleButton value="boost" color="secondary">
-                      Boost
+                    <ToggleButton value="exact" color="secondary">
+                      Exact
                     </ToggleButton>
                     <ToggleButton value="none">
                       None
                     </ToggleButton>
                   </ToggleButtonGroup>
+                  {(fieldConfig[field] === 'vector' || fieldConfig[field] === 'exact') && (
+                    <ToggleButtonGroup
+                      value={fieldPlacement[field]}
+                      exclusive
+                      onChange={(_, value) => value && setFieldPlacement(prev => ({ ...prev, [field]: value }))}
+                      size="small"
+                    >
+                      <ToggleButton value="must">
+                        Required
+                      </ToggleButton>
+                      <ToggleButton value="should">
+                        Optional
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  )}
                   {fieldConfig[field] === 'vector' && (
                     <>
                       <TextField
@@ -270,33 +374,19 @@ export default function ConfigPage() {
                       />
                     </>
                   )}
-                  {fieldConfig[field] === 'boost' && (
-                    <>
-                      <TextField
-                        label="Boost"
-                        type="number"
-                        size="small"
-                        value={boostConfigs[field].boost}
-                        onChange={(e) => setBoostConfigs(prev => ({
-                          ...prev,
-                          [field]: { ...prev[field], boost: parseFloat(e.target.value) || 1 }
-                        }))}
-                        inputProps={{ step: 0.1 }}
-                        sx={{ width: 80 }}
-                      />
-                      <TextField
-                        label="Weight"
-                        type="number"
-                        size="small"
-                        value={boostConfigs[field].weight}
-                        onChange={(e) => setBoostConfigs(prev => ({
-                          ...prev,
-                          [field]: { ...prev[field], weight: parseFloat(e.target.value) || 1 }
-                        }))}
-                        inputProps={{ step: 0.1 }}
-                        sx={{ width: 80 }}
-                      />
-                    </>
+                  {fieldConfig[field] === 'exact' && (
+                    <TextField
+                      label="Weight"
+                      type="number"
+                      size="small"
+                      value={exactConfigs[field].weight}
+                      onChange={(e) => setExactConfigs(prev => ({
+                        ...prev,
+                        [field]: { ...prev[field], weight: parseFloat(e.target.value) || 1 }
+                      }))}
+                      inputProps={{ step: 0.1 }}
+                      sx={{ width: 80 }}
+                    />
                   )}
                 </Box>
               </Box>
@@ -307,7 +397,7 @@ export default function ConfigPage() {
       
       <Paper sx={{ p: 3, mt: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Amazon OpenSearch Query
+          Amazon OpenSearch Query Template
         </Typography>
         <Box sx={{ backgroundColor: '#1e1e1e', p: 2, borderRadius: 1, overflow: 'auto' }}>
           <pre style={{ margin: 0, fontSize: '12px', color: '#e0e0e0' }}>

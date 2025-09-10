@@ -5,8 +5,7 @@ interface VectorConfig {
   weight: number;
 }
 
-interface BoostConfig {
-  boost: number;
+interface ExactConfig {
   weight: number;
 }
 
@@ -30,17 +29,19 @@ export class CommonUtils {
     
     static generateOpenSearchQuery(
         vectorFields: string[],
-        boostFields: string[],
+        exactFields: string[],
         vectorConfigs: { [key: string]: VectorConfig },
-        boostConfigs: { [key: string]: BoostConfig },
-        maxResults: number
+        exactConfigs: { [key: string]: ExactConfig },
+        maxResults: number,
+        minimumShouldMatch: string = "0",
+        explain: boolean = false
     ) {
         const mustQueries = vectorFields.map(field => ({
             function_score: {
                 query: {
                     knn: {
-                        [`${field}-embedding`]: {
-                            vector: `${field}_embedding`,
+                        [`${field}Embedding`]: {
+                            vector: `${field}Embedding`,
                             min_score: vectorConfigs[field].minScore.toString()
                         }
                     }
@@ -49,20 +50,21 @@ export class CommonUtils {
             }
         }));
         
-        const shouldQueries = boostFields.map(field => ({
+        const shouldQueries = exactFields.map(field => ({
             function_score: {
                 query: {
-                    match: { [field]: field }
+                    term: { [field]: field }
                 },
-                boost: boostConfigs[field].boost,
-                weight: boostConfigs[field].weight
+                weight: exactConfigs[field].weight
             }
         }));
         
         return {
             size: maxResults,
+            explain: explain,
             query: {
                 bool: {
+                    minimum_should_match: minimumShouldMatch,
                     must: mustQueries,
                     should: shouldQueries
                 }
