@@ -6,6 +6,8 @@ This tool is particularly useful for data deduplication, product matching, conte
 
 While this solution was built to group related film titles, you may use it to group any type of data.
 
+**⚠️ Disclaimer: This code is intended for experimentation purposes and to demonstrate the art of the possible. Please conduct thorough due diligence, security reviews, and testing before deploying in production environments.**
+
 ## Features
 
 ### Step 1: Create the Index
