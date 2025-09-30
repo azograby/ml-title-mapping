@@ -1,64 +1,47 @@
 import { uploadData, downloadData, remove } from 'aws-amplify/storage';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../amplify/data/resource';
 import { AuthService } from '../services/auth';
 
 export class ConfigurationService {
-  //@ts-ignore
-  async saveSearchConfig(config): Promise<void> {
+  private client = generateClient<Schema>();
+
+  async getIndexConfig(indexName: string): Promise<any> {
     try {
-      const configJson = JSON.stringify(config, null, 2);
-      const blob = new Blob([configJson], { type: 'application/json' });
+      const { data: indexConfig } = await this.client.models.IndexConfig.get({ indexName });
       
-      await uploadData({
-        path: ({ identityId }) => `config/${identityId}/search-config.json`,
-        data: blob,
-        options: {
-          contentType: 'application/json',
-        }
-      }).result;
-      
-      console.log('Search configuration saved successfully');
-    } catch (error) {
-      console.error('Error saving search configuration:', error);
-      throw error;
-    }
-  }
-  
-  async getDefaultSearchConfig(): Promise<any> {
-    try {
-      const response = await fetch('/default-search-config.json');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!indexConfig?.searchConfig) {
+        throw new Error('Search configuration not found for this index');
       }
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading default search configuration:', error);
-      throw error;
-    }
-  }
-  
-  async getCustomSearchConfig(): Promise<any> {
-    try {
-      const result = await downloadData({
-        path: ({ identityId }) => `config/${identityId}/search-config.json`
-      }).result;
       
-      const configText = await result.body.text();
-      return JSON.parse(configText);
+      console.log(`Raw config for ${indexName}:`, indexConfig.searchConfig);
+      return indexConfig.searchConfig;
     } catch (error) {
-      console.error('Error loading custom search configuration:', error);
+      console.error('Error loading index configuration:', error);
       throw error;
     }
   }
-  
-  async deleteCustomSearchConfig(): Promise<void> {
+
+  async saveIndexConfig(indexName: string, config: any): Promise<void> {
     try {
-      await remove({
-        path: ({ identityId }) => `config/${identityId}/search-config.json`
+      await this.client.models.IndexConfig.update({
+        indexName,
+        searchConfig: JSON.stringify(config)
       });
       
-      console.log('Custom search configuration deleted successfully');
+      console.log('Index configuration saved successfully');
     } catch (error) {
-      console.error('Error deleting custom search configuration:', error);
+      console.error('Error saving index configuration:', error);
+      throw error;
+    }
+  }
+
+  async getFullIndexConfig(indexName: string): Promise<any> {
+    try {
+      const { data: indexConfig } = await this.client.models.IndexConfig.get({ indexName });
+      return indexConfig;
+    } catch (error) {
+      console.error('Error loading full index configuration:', error);
       throw error;
     }
   }

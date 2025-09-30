@@ -24,7 +24,8 @@
     "react": "^18",
     "react-dom": "^18",
     "react-redux": "^9.2.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.5.1",
@@ -38,6 +39,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/xlsx": "^0.0.35",
     "aws-cdk": "^2",
     "aws-cdk-lib": "^2",
     "constructs": "^10.3.0",

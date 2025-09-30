@@ -1,4 +1,4 @@
-const appPrefix = 'title-mapping';
+const appPrefix = 'item-mapping';
 
 export interface BedrockModel {
   id: string;
@@ -44,7 +44,9 @@ export const vars = {
     APP_PREFIX: appPrefix,
     ASSET_S3_BUCKET_NAME: appPrefix + '-assets',
     API_PATHS: {
-        FIND_RELATED_TITLES: 'related-titles'
+        FIND_RELATED_ITEMS: 'related-items',
+        CREATE_INDEX: 'create-index',
+        GET_ALL_INDEXES: 'get-all-indexes'
     },
     PAGE_ROUTES: {
         HOME: {

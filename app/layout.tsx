@@ -6,7 +6,7 @@
 // Supports weights 100-900
 import '@fontsource-variable/raleway';
 
-import { styled, useTheme, Theme, CSSObject } from '@mui/material/styles';
+import { styled } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import MuiDrawer from '@mui/material/Drawer';
 import MuiAppBar, { AppBarProps as MuiAppBarProps } from '@mui/material/AppBar';
@@ -14,32 +14,26 @@ import Toolbar from '@mui/material/Toolbar';
 import List from '@mui/material/List';
 import CssBaseline from '@mui/material/CssBaseline';
 import Typography from '@mui/material/Typography';
-import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import DynamicFeedIcon from '@mui/icons-material/DynamicFeed';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import Button from '@mui/material/Button';
 import HomeIcon from '@mui/icons-material/Home';
 import VideoSettingsIcon from '@mui/icons-material/VideoSettings';
-import { Backdrop, CircularProgress, Snackbar, Alert } from '@mui/material';
+import AddBoxIcon from '@mui/icons-material/AddBox';
 // import Drawer from '@mui/material/Drawer';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 
-import { Inter } from "next/font/google";
 import { Providers } from "../components/providers/providers";
 import React from 'react';
-import { vars } from '../amplify/global-variables';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import "./globals.css";
 import { AuthWrapper } from "../components/providers/auth-wrapper";
-import LogMessages from "../components/log-output/log-output";
+import "../lib/amplify-config";
 
 const drawerWidth = 180;
 
@@ -139,7 +133,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   const router = useRouter();
   
   const toggleDrawer = () => {
@@ -154,6 +148,7 @@ export default function RootLayout({
 
   const menuItems = [
     { text: 'Home', icon: <HomeIcon />, link: '/' },
+    { text: 'Create Index', icon: <AddBoxIcon />, link: 'create-index' },
     { text: 'Ingest', icon: <CloudUploadIcon/>, link: 'ingest' },
     { text: 'Config', icon: <VideoSettingsIcon />, link: 'config' },
     { text: 'Mapper', icon: <DynamicFeedIcon />, link: 'mapper' },
@@ -163,7 +158,7 @@ export default function RootLayout({
     <Providers>
       <html lang="en">
         <head>
-          <title>Title Mapping Solution</title>
+          <title>Item Mapping Solution</title>
         </head>
         <body>
           <ThemeProvider theme={darkTheme}>
@@ -182,7 +177,7 @@ export default function RootLayout({
                     <MenuIcon />
                   </IconButton>
                   <Typography variant="h6" noWrap component="div">
-                    Title Mapper
+                    Item Mapper
                   </Typography>
                 </Toolbar>
               </AppBar>
@@ -220,7 +215,7 @@ export default function RootLayout({
                             minWidth: 0,
                             mr: open ? 3 : 'auto',
                             justifyContent: 'center',
-                            color: '#783AE0', // Changed to cyan color
+                            color: 'white',
                           }}
                         >
                           {item.icon}

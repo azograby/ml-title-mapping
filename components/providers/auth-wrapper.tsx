@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { AuthService } from '../../services/auth';
@@ -13,6 +13,8 @@ interface AuthWrapperProps {
 }
 
 export function AuthWrapper({ children }: AuthWrapperProps) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const currentUser = useSelector((state:IUserStateReducer) => {
     return state.authReducer.user
   });
@@ -30,25 +32,27 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
             dispatch(authStoreActions.setUser(new User(user.userId, user.username, user.signInDetails?.loginId || '', identityId || '')));
           } catch (error) {
             console.error('Error getting user details:', error);
+            dispatch(authStoreActions.setUser(undefined));
           }
+        } else {
+          dispatch(authStoreActions.setUser(undefined));
         }
       } catch (error) {
         console.log('Not authenticated', error);
         dispatch(authStoreActions.setUser(undefined));
+      } finally {
+        setIsLoading(false);
+        setAuthChecked(true);
       }
     };
 
-    checkAuthStatus();
-  }, []);
+    if (!authChecked) {
+      checkAuthStatus();
+    }
+  }, [dispatch, authChecked]);
 
-  // If authenticated, show the app
-  if (currentUser) {
-    return (
-      <>
-        {children}
-      </>
-    );
-  } else { //If not authenticated, show the Authenticator
+  // Show loading while checking auth status
+  if (isLoading) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -57,19 +61,40 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
         height: '100vh',
         backgroundColor: '#f5f5f5'
       }}>
-          <Authenticator>
-            {(event) => {
-              const user = event.user;
-              if(user) {
-                // TODO: NEED TO UPDATE IDENTITY ID
-                dispatch(authStoreActions.setUser(new User(user.userId, user.username, user.signInDetails?.loginId || '', '')));
-              } else {
-                dispatch(authStoreActions.setUser(undefined));
-              }
-              return <></>;
-            }}
-          </Authenticator>
+        <div>Loading...</div>
       </div>
     );
   }
+
+  // If authenticated, show the app
+  if (currentUser) {
+    return (
+      <>
+        {children}
+      </>
+    );
+  }
+
+  // If not authenticated, show the Authenticator
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      height: '100vh',
+      backgroundColor: '#f5f5f5'
+    }}>
+        <Authenticator>
+          {(event) => {
+            const user = event.user;
+            if(user) {
+              dispatch(authStoreActions.setUser(new User(user.userId, user.username, user.signInDetails?.loginId || '', '')));
+            } else {
+              dispatch(authStoreActions.setUser(undefined));
+            }
+            return <></>;
+          }}
+        </Authenticator>
+    </div>
+  );
 }

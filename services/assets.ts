@@ -16,16 +16,16 @@ export class AssetsService {
      * Upload files directly to S3 instead of going through API
      * This is more efficient for large files
      */
-    async uploadFiles(files: File[]): Promise<UploadResult[]> {
+    async uploadFiles(files: File[], indexName: string): Promise<UploadResult[]> {
         // Map each file to a promise that resolves with an UploadResult
         const uploadPromises = files.map(async (file): Promise<UploadResult> => {
             try {
                 // Generate a unique key for the file
                 const fileExtension = file.name.split('.').pop();
-                const key = `assets/${await this.getUploadPath()}/${uuidv4()}.${fileExtension}`;
+                const key = `assets/${await this.getUploadPath()}/${indexName}/${uuidv4()}.${fileExtension}`;
                 
                 const uploadResult = await uploadData({
-                    path: ({identityId}) => `assets/${identityId}/${uuidv4()}.${fileExtension}`,
+                    path: ({identityId}) => `assets/${identityId}/${indexName}/${uuidv4()}.${fileExtension}`,
                     data: file,
                     options: {
                         contentType: file.type ? file.type : fileExtension,
@@ -66,7 +66,6 @@ export class AssetsService {
         if (failed.length > 0) {
             console.error('Failed uploads:', failed.map(f => f.file.name));
             // We don't throw here to allow partial success
-            // TODO: handle errors and failures and test
         }
     
         return results;

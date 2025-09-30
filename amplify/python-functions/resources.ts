@@ -32,7 +32,6 @@ class LambdaPythonBundler implements ILocalBundling {
       return false;
     }
 
-    // TODO: check if requirements file exists
     const commands = [
       `cd ${this.functionDir}`,
       // compiled package is necessary for packages that are compiled, such as numpy
@@ -51,13 +50,13 @@ export class CustomLambdaStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    new lambda.Function(this, 'ingestTitlesFunction', {
+    new lambda.Function(this, 'ingestItemsFunction', {
       runtime: lambda.Runtime.PYTHON_3_9,
       handler: 'index.lambda_handler',
-      functionName: CommonUtils.getUniqueResourceNameForEnv('ingest-titles'),
-      description: 'Ingest titles into OpenSearch and add titles to DynamoDB processing table',
+      functionName: CommonUtils.getUniqueResourceNameForEnv('ingest-items'),
+      description: 'Ingest items into OpenSearch and add items to DynamoDB processing table',
       timeout: Duration.seconds(900),
-      memorySize: 2048,
+      memorySize: 256,
       environment: {
         "ASSET_BUCKET_NAME": assetBucketName || '',
         "AWS_BRANCH": process.env.AWS_BRANCH || '',
@@ -65,18 +64,18 @@ export class CustomLambdaStack extends Stack {
       code: lambda.Code.fromAsset(functionDir, {
         bundling: {
           image: lambda.Runtime.PYTHON_3_9.bundlingImage, // this is just a fallback, the build process must support Docker if you decide to use this
-          local: new LambdaPythonBundler(`${functionDir}/ingestTitles`, true) // functionDir is the root of custom-functions. Must specify lambda folder here
+          local: new LambdaPythonBundler(`${functionDir}/ingestItems`, true) // functionDir is the root of custom-functions. Must specify lambda folder here
         },
       }),
     });
 
-    new lambda.Function(this, 'findRelatedTitlesFunction', {
+    new lambda.Function(this, 'findRelatedItemsFunction', {
       runtime: lambda.Runtime.PYTHON_3_9,
       handler: 'index.lambda_handler',
-      functionName: CommonUtils.getUniqueResourceNameForEnv('find-related-titles'),
-      description: 'Receives title metadata for a single title, and returns related titles by searching Amazon OpenSearch',
+      functionName: CommonUtils.getUniqueResourceNameForEnv('find-related-items'),
+      description: 'Receives item metadata for a single item, and returns related items by searching Amazon OpenSearch',
       timeout: Duration.seconds(900),
-      memorySize: 2048,
+      memorySize: 256,
       environment: {
         "ASSET_BUCKET_NAME": assetBucketName || '',
         "AWS_BRANCH": process.env.AWS_BRANCH || '',
@@ -84,7 +83,43 @@ export class CustomLambdaStack extends Stack {
       code: lambda.Code.fromAsset(functionDir, {
         bundling: {
           image: lambda.Runtime.PYTHON_3_9.bundlingImage, // this is just a fallback, the build process must support Docker if you decide to use this
-          local: new LambdaPythonBundler(`${functionDir}/findRelatedTitles`, true) // functionDir is the root of custom-functions. Must specify lambda folder here
+          local: new LambdaPythonBundler(`${functionDir}/findRelatedItems`, true) // functionDir is the root of custom-functions. Must specify lambda folder here
+        },
+      }),
+    });
+
+    new lambda.Function(this, 'createIndexFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'index.lambda_handler',
+      functionName: CommonUtils.getUniqueResourceNameForEnv('create-index'),
+      description: 'Create OpenSearch index based on field configuration from create-index page',
+      timeout: Duration.seconds(300),
+      memorySize: 256,
+      environment: {
+        "AWS_BRANCH": process.env.AWS_BRANCH || '',
+      },
+      code: lambda.Code.fromAsset(functionDir, {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          local: new LambdaPythonBundler(`${functionDir}/createIndex`, false)
+        },
+      }),
+    });
+
+    new lambda.Function(this, 'getAllIndexesFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'index.lambda_handler',
+      functionName: CommonUtils.getUniqueResourceNameForEnv('get-all-indexes'),
+      description: 'Get all indexes from OpenSearch collection',
+      timeout: Duration.seconds(300),
+      memorySize: 256,
+      environment: {
+        "AWS_BRANCH": process.env.AWS_BRANCH || '',
+      },
+      code: lambda.Code.fromAsset(functionDir, {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          local: new LambdaPythonBundler(`${functionDir}/getAllIndexes`, false)
         },
       }),
     });

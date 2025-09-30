@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Paper, ToggleButton, ToggleButtonGroup, Grid, TextField, Button, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import { ConfigurationService } from '../../services/configuration';
+import IndexDropdown from '../../components/index-dropdown/index-dropdown';
 import { CommonUtils } from '../../amplify/utils';
 import { useSelector, useDispatch } from 'react-redux';
 import { ISearchConfigStateReducer } from '../../store/search-config';
@@ -29,30 +30,11 @@ interface ExactConfig {
 }
 
 export default function ConfigPage() {
-  const titleFields = [
-    'mamUUID', 'contentType', 'status', 'region', 'partner', 'partnerID', 
-    'title', 'language', 'eidr', 'imdb', 'genre', 'subgenre', 'category', 
-    'subcategory', 'releaseDate', 'duration', 'productionCountry', 
-    'productionYear', 'productionCompany', 'rating', 'ratingDescriptors', 
-    'producers', 'directors', 'writers', 'actors', 'shortDescription', 
-    'longDescription'
-  ];
-
-  const [fieldConfig, setFieldConfig] = useState<FieldConfig>(
-    titleFields.reduce((acc, field) => ({ ...acc, [field]: 'none' }), {})
-  );
-  
-  const [fieldPlacement, setFieldPlacement] = useState<FieldPlacement>(
-    titleFields.reduce((acc, field) => ({ ...acc, [field]: 'must' }), {})
-  );
-  
-  const [vectorConfigs, setVectorConfigs] = useState<{ [key: string]: VectorConfig }>(
-    titleFields.reduce((acc, field) => ({ ...acc, [field]: { minScore: 0.0, weight: 1.0 } }), {})
-  );
-  
-  const [exactConfigs, setExactConfigs] = useState<{ [key: string]: ExactConfig }>(
-    titleFields.reduce((acc, field) => ({ ...acc, [field]: { weight: 1.0 } }), {})
-  );
+  const [fields, setFields] = useState<string[]>([]);
+  const [fieldConfig, setFieldConfig] = useState<FieldConfig>({});
+  const [fieldPlacement, setFieldPlacement] = useState<FieldPlacement>({});
+  const [vectorConfigs, setVectorConfigs] = useState<{ [key: string]: VectorConfig }>({});
+  const [exactConfigs, setExactConfigs] = useState<{ [key: string]: ExactConfig }>({});
   
   const [maxResults, setMaxResults] = useState<number>(10);
   const [explain, setExplain] = useState<boolean>(false);
@@ -60,66 +42,136 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
+  const [confirmNoneFields, setConfirmNoneFields] = useState<boolean>(false);
+  const [selectedIndex, setSelectedIndex] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ml-item-mapping-selected-index') || '';
+    }
+    return '';
+  });
   
   const configService = new ConfigurationService();
-  const searchConfig = useSelector((state: ISearchConfigStateReducer) => state.searchConfigReducer.config);
+  let searchConfig = useSelector((state: ISearchConfigStateReducer) => state.searchConfigReducer.config);
   const dispatch = useDispatch();
-  
+
+  const processConfiguration = (configData: any) => {
+    let config;
+    try {
+      config = typeof configData === 'string' ? JSON.parse(configData) : configData;
+    } catch (error) {
+      console.error('Error parsing configuration:', error);
+      return;
+    }
+    
+    console.log('Processing config for index:', selectedIndex, config);
+    
+    setMaxResults(config.size || 10);
+    setExplain(config.explain || false);
+    setMinOptionalFieldMatches(parseInt(config.query?.bool?.minimum_should_match) || 0);
+    
+    const allFields = new Set<string>();
+    const newFieldConfig: FieldConfig = {};
+    const newFieldPlacement: FieldPlacement = {};
+    const newVectorConfigs: { [key: string]: VectorConfig } = {};
+    const newExactConfigs: { [key: string]: ExactConfig } = {};
+    
+    ['must', 'should'].forEach(queryType => {
+      config.query?.bool?.[queryType]?.forEach((query: any) => {
+        if (query.function_score?.query?.knn) {
+          const knnField = Object.keys(query.function_score.query.knn)[0];
+          const fieldName = knnField.replace('Embedding', '');
+          allFields.add(fieldName);
+          newFieldConfig[fieldName] = 'vector';
+          newFieldPlacement[fieldName] = queryType as PlacementType;
+          
+          const minScoreValue = query.function_score.query.knn[knnField].min_score;
+          const weightValue = query.function_score.weight;
+          
+          console.log(`Index: ${selectedIndex}, Field: ${fieldName}, Raw minScore: ${minScoreValue} (type: ${typeof minScoreValue}), Raw weight: ${weightValue}`);
+          
+          newVectorConfigs[fieldName] = {
+            minScore: minScoreValue !== undefined ? parseFloat(minScoreValue.toString()) : 0,
+            weight: weightValue !== undefined ? parseFloat(weightValue.toString()) : 1
+          };
+          
+          console.log(`Index: ${selectedIndex}, Field: ${fieldName}, Processed minScore: ${newVectorConfigs[fieldName].minScore}, Processed weight: ${newVectorConfigs[fieldName].weight}`);
+        } else if (query.function_score?.query?.term) {
+          const termField = Object.keys(query.function_score.query.term)[0];
+          allFields.add(termField);
+          newFieldConfig[termField] = 'exact';
+          newFieldPlacement[termField] = queryType as PlacementType;
+          
+          const weightValue = query.function_score.weight;
+          newExactConfigs[termField] = {
+            weight: weightValue !== undefined ? parseFloat(weightValue.toString()) : 1
+          };
+        }
+      });
+    });
+    
+
+    
+    const fieldsArray = Array.from(allFields).sort();
+    setFields(fieldsArray);
+    
+    fieldsArray.forEach(field => {
+      if (!newFieldConfig[field]) {
+        newFieldConfig[field] = 'none';
+        newFieldPlacement[field] = 'must';
+      }
+    });
+    
+    console.log(`Final vector configs for ${selectedIndex}:`, newVectorConfigs);
+    
+    setFieldConfig(newFieldConfig);
+    setFieldPlacement(newFieldPlacement);
+    setVectorConfigs(newVectorConfigs);
+    setExactConfigs(newExactConfigs);
+  };
+
   useEffect(() => {
     if (searchConfig) {
-      setMaxResults(searchConfig.size || 10);
-      setExplain(searchConfig.explain || false);
-      setMinOptionalFieldMatches(parseInt(searchConfig.query?.bool?.minimum_should_match) || 0);
-      
-      const newFieldConfig: FieldConfig = titleFields.reduce((acc, field) => ({ ...acc, [field]: 'none' }), {});
-      const newFieldPlacement: FieldPlacement = titleFields.reduce((acc, field) => ({ ...acc, [field]: 'must' }), {});
-      const newVectorConfigs: { [key: string]: VectorConfig } = {};
-      const newExactConfigs: { [key: string]: ExactConfig } = {};
-      
-      // Parse must and should queries
-      ['must', 'should'].forEach(queryType => {
-        searchConfig.query?.bool?.[queryType]?.forEach((query: any) => {
-          if (query.function_score?.query?.knn) {
-            const knnField = Object.keys(query.function_score.query.knn)[0];
-            const fieldName = knnField.replace('Embedding', '');
-            if (titleFields.includes(fieldName)) {
-              newFieldConfig[fieldName] = 'vector';
-              newFieldPlacement[fieldName] = queryType as PlacementType;
-              newVectorConfigs[fieldName] = {
-                minScore: parseFloat(query.function_score.query.knn[knnField].min_score) || 0,
-                weight: query.function_score.weight || 1
-              };
-            }
-          } else if (query.function_score?.query?.term) {
-            const termField = Object.keys(query.function_score.query.term)[0];
-            if (titleFields.includes(termField)) {
-              newFieldConfig[termField] = 'exact';
-              newFieldPlacement[termField] = queryType as PlacementType;
-              newExactConfigs[termField] = {
-                weight: query.function_score.weight || 1
-              };
-            }
-          }
-        });
-      });
-      
-      setFieldConfig(newFieldConfig);
-      setFieldPlacement(newFieldPlacement);
-      setVectorConfigs(prev => ({ ...prev, ...newVectorConfigs }));
-      setExactConfigs(prev => ({ ...prev, ...newExactConfigs }));
+      processConfiguration(searchConfig);
     }
   }, [searchConfig]);
+
+  useEffect(() => {
+    if (selectedIndex && !searchConfig) {
+      handleIndexChange(selectedIndex);
+    }
+  }, []);
+
+  const handleIndexChange = async (indexName: string) => {
+    setSelectedIndex(indexName);
+    
+    // Reset all state when changing indexes
+    setFields([]);
+    setFieldConfig({});
+    setFieldPlacement({});
+    setVectorConfigs({});
+    setExactConfigs({});
+    
+    if (indexName) {
+      try {
+        const config = await configService.getIndexConfig(indexName);
+        console.log('Loading config for index:', indexName, config);
+        dispatch(searchConfigStoreActions.setSearchConfig(config));
+      } catch (error) {
+        setSnackbar({ open: true, message: 'Failed to load index configuration', severity: 'error' });
+      }
+    }
+  };
 
   const handleFieldChange = (field: string, value: FieldType | null) => {
     if (value) {
       setFieldConfig(prev => ({ ...prev, [field]: value }));
-      if (value !== 'vector') {
+      if (value === 'vector' && !vectorConfigs[field]) {
         setVectorConfigs(prev => ({
           ...prev,
           [field]: { minScore: 0.0, weight: 1.0 }
         }));
       }
-      if (value !== 'exact') {
+      if (value === 'exact' && !exactConfigs[field]) {
         setExactConfigs(prev => ({
           ...prev,
           [field]: { weight: 1.0 }
@@ -128,8 +180,8 @@ export default function ConfigPage() {
     }
   };
 
-  const vectorFields = titleFields.filter(field => fieldConfig[field] === 'vector');
-  const exactFields = titleFields.filter(field => fieldConfig[field] === 'exact');
+  const vectorFields = fields.filter(field => fieldConfig[field] === 'vector');
+  const exactFields = fields.filter(field => fieldConfig[field] === 'exact');
   
   const generateOpenSearchQuery = () => {
     const mustQueries: any[] = [];
@@ -143,7 +195,7 @@ export default function ConfigPage() {
             knn: {
               [`${field}Embedding`]: {
                 vector: `${field}Embedding`,
-                min_score: vectorConfigs[field].minScore.toString()
+                min_score: vectorConfigs[field].minScore
               }
             }
           },
@@ -190,16 +242,33 @@ export default function ConfigPage() {
   };
   
   const handleSave = async () => {
+    const hasNoneFields = Object.values(fieldConfig).some(value => value === 'none');
+    
+    if (hasNoneFields) {
+      setConfirmNoneFields(true);
+      return;
+    }
+    
+    await performSave();
+  };
+  
+  const performSave = async () => {
     setSaving(true);
     try {
       const searchQuery = generateOpenSearchQuery();
-      await configService.saveSearchConfig(searchQuery);
+      await configService.saveIndexConfig(selectedIndex, searchQuery);
+      dispatch(searchConfigStoreActions.setSearchConfig(JSON.stringify(searchQuery)));
       setSnackbar({ open: true, message: 'Configuration saved successfully!', severity: 'success' });
     } catch (error) {
       setSnackbar({ open: true, message: 'Error saving configuration', severity: 'error' });
     } finally {
       setSaving(false);
     }
+  };
+  
+  const handleConfirmNoneFields = async () => {
+    setConfirmNoneFields(false);
+    await performSave();
   };
   
   const handleResetToDefault = () => {
@@ -209,27 +278,34 @@ export default function ConfigPage() {
   const handleConfirmReset = async () => {
     setConfirmReset(false);
     try {
-      await configService.deleteCustomSearchConfig();
-    } catch (error) {
-      setSnackbar({ open: true, message: 'Error deleting CUSTOM search configuration', severity: 'error' });
-      return;
-    }
-
-    try {
-      const defaultConfig = await configService.getDefaultSearchConfig();
-      dispatch(searchConfigStoreActions.setSearchConfig(defaultConfig));
-      setSnackbar({ open: true, message: 'Using DEFAULT search configuration file', severity: 'success' });
+      const config = await configService.getIndexConfig(selectedIndex);
+      dispatch(searchConfigStoreActions.setSearchConfig(config));
+      processConfiguration(config);
+      setSnackbar({ open: true, message: 'Configuration reset to original values', severity: 'success' });
     } catch(error) {
-      setSnackbar({ open: true, message: 'Error resetting to default search configuration', severity: 'error' });
+      setSnackbar({ open: true, message: 'Error resetting configuration', severity: 'error' });
     }
   };
 
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        Title Similarity Search Configuration
+        Item Similarity Search Configuration
       </Typography>
       
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Select Index
+        </Typography>
+        <IndexDropdown 
+          selectedIndex={selectedIndex}
+          onIndexChange={handleIndexChange}
+          onError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+        />
+      </Paper>
+      
+      {selectedIndex && searchConfig && (
+        <>
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 2, mb: 3 }}>
@@ -308,10 +384,10 @@ export default function ConfigPage() {
           Configure each field's search type (Vector, Exact, or None), and determine if that field has to match (Required) to be included in the results, or does not (Optional).
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-          {titleFields.map(field => (
-            <Box key={field} sx={{ width: 'calc(50% - 8px)', minWidth: 400, mb: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="body2" sx={{ minWidth: 140, textAlign: 'left' }}>
+          {fields.map(field => (
+            <Box key={field} sx={{ width: 'calc(50% - 40px)', minWidth: 400, mb: 1, mr: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body2" sx={{ minWidth: 120, textAlign: 'left', fontWeight: 'bold' }}>
                   {field}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -401,28 +477,32 @@ export default function ConfigPage() {
         </Typography>
         <Box sx={{ backgroundColor: '#1e1e1e', p: 2, borderRadius: 1, overflow: 'auto' }}>
           <pre style={{ margin: 0, fontSize: '12px', color: '#e0e0e0' }}>
-            {JSON.stringify(generateOpenSearchQuery(), null, 2)}
+            {JSON.stringify(JSON.parse(searchConfig), null, 2)}
           </pre>
         </Box>
       </Paper>
+        </>
+      )}
       
-      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-        <Button 
-          variant="outlined" 
-          onClick={handleResetToDefault}
-          size="large"
-        >
-          Reset to Default
-        </Button>
-        <Button 
-          variant="contained" 
-          onClick={handleSave}
-          disabled={saving}
-          size="large"
-        >
-          {saving ? 'Saving...' : 'Save Configuration'}
-        </Button>
-      </Box>
+      {selectedIndex && searchConfig && (
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Button 
+            variant="outlined" 
+            onClick={handleResetToDefault}
+            size="large"
+          >
+            Reset to Original
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSave}
+            disabled={saving}
+            size="large"
+          >
+            {saving ? 'Saving...' : 'Save Configuration'}
+          </Button>
+        </Box>
+      )}
       
       <Snackbar
         open={snackbar.open}
@@ -438,13 +518,28 @@ export default function ConfigPage() {
         <DialogTitle>Reset Configuration</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to reset all configurations to default values? This action cannot be undone.
+            Are you sure you want to reset all configurations to the original values from the database? This will discard any unsaved changes.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
           <Button onClick={handleConfirmReset} color="primary" variant="contained">
             Reset
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      <Dialog open={confirmNoneFields} onClose={() => setConfirmNoneFields(false)}>
+        <DialogTitle>Warning: Fields Set to None</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            You have one or more fields set to "None". If you save this configuration, those fields will be permanently removed from being configurable in the future. Are you sure you want to continue?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmNoneFields(false)}>Cancel</Button>
+          <Button onClick={handleConfirmNoneFields} color="warning" variant="contained">
+            Save Anyway
           </Button>
         </DialogActions>
       </Dialog>

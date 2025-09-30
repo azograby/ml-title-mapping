@@ -1,14 +1,8 @@
 "use client";
 
-import { Amplify } from "aws-amplify";
-import outputs from "../amplify_outputs.json";
-import { parseAmplifyConfig } from "aws-amplify/utils";
 import "./app.css";
 import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
-import { ConfigurationService } from '../services/configuration';
-import { searchConfigStoreActions } from '../store/search-config';
-import { Backdrop, CircularProgress, Snackbar, Alert } from '@mui/material';
+import { Backdrop, CircularProgress } from '@mui/material';
 import styles from './page.module.css';
 import Box from '@mui/material/Box';
 import Stepper from '@mui/material/Stepper';
@@ -21,20 +15,9 @@ import Typography from '@mui/material/Typography';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import TuneIcon from '@mui/icons-material/Tune';
 import { StepIconProps } from '@mui/material/StepIcon';
 import { styled } from '@mui/material/styles';
-
-const amplifyConfig = parseAmplifyConfig(outputs);
-
-Amplify.configure(
-  {
-    ...amplifyConfig,
-    API: {
-      ...amplifyConfig.API,
-      REST: outputs.custom.API,
-    },
-  }
-);
 
 
 
@@ -65,73 +48,116 @@ function CustomStepIcon(props: { stepNumber: number; icon: React.ReactElement })
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [notification, setNotification] = useState<{ open: boolean; message: string; severity: 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
-  const dispatch = useDispatch();
-  const configService = new ConfigurationService();
   
   useEffect(() => {
-    const loadConfiguration = async () => {
-      try {
-        // First try to load custom config
-        const customConfig = await configService.getCustomSearchConfig();
-        dispatch(searchConfigStoreActions.setSearchConfig(customConfig));
-        console.log('Custom configuration loaded successfully');
-        setNotification({ open: true, message: 'Using CUSTOM search configuration file', severity: 'info' });
-      } catch (customError) {
-        // If custom config doesn't exist, try default config
-        try {
-          const defaultConfig = await configService.getDefaultSearchConfig();
-          dispatch(searchConfigStoreActions.setSearchConfig(defaultConfig));
-          console.log('Default configuration loaded successfully');
-          setNotification({ open: true, message: 'Using DEFAULT search configuration file', severity: 'info' });
-        } catch (defaultError) {
-          setNotification({ open: true, message: 'Could not load or find Default configuration file', severity: 'error' });
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadConfiguration();
+    setLoading(false);
   }, []);
 
   const steps = [
     {
+      label: 'Create Index',
+      description: 'Analyze Excel metadata to configure which fields should be vector fields for semantic search and which should be exact match fields for precise filtering.',
+      icon: <TuneIcon />
+    },
+    {
       label: 'Ingest Metadata',
-      description: 'Upload Excel sheet with title metadata to begin the mapping process. Data is ingested into Amazon OpenSearch, and a work queue is created in Amazon DynamoDB.',
+      description: 'Upload Excel sheet with item metadata to begin the mapping process. Data is ingested into Amazon OpenSearch, and a work queue is created in Amazon DynamoDB.',
       icon: <CloudUploadIcon />
     },
     {
-      label: 'Create Search Configuration',
-      description: 'Set up search configuration with parameters used to determine similarity between titles. Define weights and thresholds for each field to be used in an Amazon OpenSearch query.',
+      label: 'Configure Search',
+      description: 'Set up search configuration with parameters used to determine similarity between items. Define weights and thresholds for each field to be used in an Amazon OpenSearch query.',
       icon: <SettingsIcon />
     },
     {
-      label: 'Map Titles',
-      description: 'Using k-NN and hybrid search powered by Amazon OpenSearch and your search configuration, find the similar titles for each title. Then, create a grouping based on the titles you select.',
+      label: 'Map Items',
+      description: 'Using k-NN and hybrid search powered by Amazon OpenSearch and your search configuration, find the similar items for each item. Then, create a grouping based on the items you select.',
       icon: <AccountTreeIcon />
     },
   ];
 
   return (
     <div className={styles['home-container']}>
-      <h1>Title Mapping Dashboard</h1>
-      <p>Welcome to the Title Mapping Solution</p>
+      <h1>Item Mapping Dashboard</h1>
+      <p>The Item Mapping Solution assists in grouping similar items together.</p>
       
-      <Box sx={{ maxWidth: 600, margin: '40px auto', p: 3 }}>
-        <Typography variant="h5" sx={{ mb: 4, fontWeight: 500, textAlign: 'center' }}>
-          Title Mapping Process
+      <Box sx={{ maxWidth: 1200, margin: '40px auto', p: 3 }}>
+        <Typography variant="h4" sx={{ mb: 6, fontWeight: 600, textAlign: 'center', color: '#8a2be2' }}>
+          Item Mapping Workflow
         </Typography>
         
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'flex-start',
+          gap: 2,
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: '60px',
+            left: '15%',
+            right: '15%',
+            height: '2px',
+            background: 'linear-gradient(90deg, #8a2be2 0%, #00bcd4 100%)',
+            zIndex: 0
+          }
+        }}>
           {steps.map((step, index) => (
-            <Box key={step.label} sx={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
-              <CustomStepIcon stepNumber={index + 1} icon={step.icon} />
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#8a2be2' }}>
-                  {step.label}
+            <Box key={step.label} sx={{ 
+              flex: 1, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center',
+              textAlign: 'center',
+              position: 'relative',
+              zIndex: 1
+            }}>
+              <Box sx={{
+                width: 120,
+                height: 120,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #8a2be2 0%, #00bcd4 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mb: 3,
+                boxShadow: '0 8px 32px rgba(138, 43, 226, 0.3)',
+                border: '3px solid rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(10px)',
+                '& svg': {
+                  fontSize: '3rem',
+                  color: 'white'
+                }
+              }}>
+                {step.icon}
+              </Box>
+              
+              <Box sx={{
+                background: 'rgba(26, 26, 58, 0.8)',
+                backdropFilter: 'blur(10px)',
+                borderRadius: 3,
+                p: 3,
+                border: '1px solid rgba(138, 43, 226, 0.2)',
+                height: 240,
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-start'
+              }}>
+                <Typography variant="h6" sx={{ 
+                  fontWeight: 700, 
+                  mb: 2, 
+                  color: '#8a2be2',
+                  fontSize: '1.1rem'
+                }}>
+                  {index + 1}. {step.label}
                 </Typography>
-                <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.6 }}>
+                <Typography variant="body2" sx={{ 
+                  color: 'rgba(255, 255, 255, 0.9)', 
+                  lineHeight: 1.5,
+                  fontSize: '0.9rem'
+                }}>
                   {step.description}
                 </Typography>
               </Box>
@@ -149,15 +175,7 @@ export default function App() {
         </Box>
       </Backdrop>
       
-      <Snackbar
-        open={notification.open}
-        autoHideDuration={6000}
-        onClose={() => setNotification(prev => ({ ...prev, open: false }))}
-      >
-        <Alert severity={notification.severity} onClose={() => setNotification(prev => ({ ...prev, open: false }))}>
-          {notification.message}
-        </Alert>
-      </Snackbar>
+
     </div>
   );
 }

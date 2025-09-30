@@ -38,33 +38,47 @@ export const customFunctionsStack = new CustomLambdaStack(
 );
 
 // set parameter store value for dynamo tables, adding env vars like below will result in a cyclic dependency
-// cfnAnalyzeVideoFunction.addEnvironment('LOG_OUTPUT_TABLE', backend.data.resources.tables["LogOutput"].tableName);
 // cfnAnalyzeVideoFunction.addEnvironment('ANALYSIS_RESULTS_TABLE', backend.data.resources.tables["VideoAnalysisResults"].tableName);
-new aws_ssm.StringParameter(backend.stack, 'LogOutputTableParam', {
-  parameterName: `/${process.env.AWS_BRANCH}/LOG_OUTPUT_TABLE`,
-  stringValue: backend.data.resources.tables["LogOutput"].tableName
+
+new aws_ssm.StringParameter(backend.stack, 'ProcessingQueueTableParam', {
+  parameterName: `/${process.env.AWS_BRANCH}/PROCESSING_QUEUE_TABLE`,
+  stringValue: backend.data.resources.tables["ProcessingQueue"].tableName
 });
 
-new aws_ssm.StringParameter(backend.stack, 'FilmTitlesProcessingQueueTableParam', {
-  parameterName: `/${process.env.AWS_BRANCH}/FILM_TITLES_PROCESSING_QUEUE_TABLE`,
-  stringValue: backend.data.resources.tables["FilmTitlesProcessingQueue"].tableName
+new aws_ssm.StringParameter(backend.stack, 'IndexConfigTableParam', {
+  parameterName: `/${process.env.AWS_BRANCH}/INDEX_CONFIG_TABLE`,
+  stringValue: backend.data.resources.tables["IndexConfig"].tableName
 });
 
-const cfnIngestTitlesFunction = customFunctionsStack.node.findChild('ingestTitlesFunction') as lambda.Function;
-const cfnFindRelatedTitlesFunction = customFunctionsStack.node.findChild('findRelatedTitlesFunction') as lambda.Function;
+const cfnIngestItemsFunction = customFunctionsStack.node.findChild('ingestItemsFunction') as lambda.Function;
+const cfnFindRelatedItemsFunction = customFunctionsStack.node.findChild('findRelatedItemsFunction') as lambda.Function;
+const cfnCreateIndexFunction = customFunctionsStack.node.findChild('createIndexFunction') as lambda.Function;
+const cfnGetAllIndexesFunction = customFunctionsStack.node.findChild('getAllIndexesFunction') as lambda.Function;
 
 const appPrefix = vars.APP_PREFIX;
 
 // OpenSearch Serverless collection
+const encryptionPolicy = new opensearchserverless.CfnSecurityPolicy(backend.stack, 'EncryptionPolicy', {
+  name: 'item-collection-encrypt-policy',
+  type: 'encryption',
+  policy: JSON.stringify({
+    "Rules": [{
+      "ResourceType": "collection",
+      "Resource": ["collection/item-collection"]
+    }],
+    "AWSOwnedKey": true
+  })
+});
+
 const networkPolicy = new opensearchserverless.CfnSecurityPolicy(backend.stack, 'NetworkPolicy', {
-  name: 'title-collection-network-policy',
+  name: 'item-collection-network-policy',
   type: 'network',
   policy: JSON.stringify([{
     "Rules": [{
-      "Resource": ["collection/title-collection"],
+      "Resource": ["collection/item-collection"],
       "ResourceType": "dashboard"
     }, {
-      "Resource": ["collection/title-collection"],
+      "Resource": ["collection/item-collection"],
       "ResourceType": "collection"
     }],
     "AllowFromPublic": true
@@ -72,41 +86,42 @@ const networkPolicy = new opensearchserverless.CfnSecurityPolicy(backend.stack, 
 });
 
 const dataAccessPolicy = new opensearchserverless.CfnAccessPolicy(backend.stack, 'DataAccessPolicy', {
-  name: 'title-collection-data-policy',
+  name: 'item-collection-data-policy',
   type: 'data',
   policy: JSON.stringify([{
     "Rules": [{
-      "Resource": ["collection/title-collection"],
+      "Resource": ["collection/item-collection"],
       "Permission": ["aoss:CreateCollectionItems", "aoss:DeleteCollectionItems", "aoss:UpdateCollectionItems", "aoss:DescribeCollectionItems", "aoss:*"],
       "ResourceType": "collection"
     }, {
-      "Resource": ["index/title-collection/*"],
+      "Resource": ["index/item-collection/*"],
       "Permission": ["aoss:CreateIndex", "aoss:DeleteIndex", "aoss:UpdateIndex", "aoss:DescribeIndex", "aoss:ReadDocument", "aoss:WriteDocument", "aoss:*"],
       "ResourceType": "index"
     }],
-    "Principal": [cfnIngestTitlesFunction.functionArn, cfnFindRelatedTitlesFunction.functionArn],
+    "Principal": [cfnIngestItemsFunction.role!.roleArn, cfnFindRelatedItemsFunction.role!.roleArn, cfnCreateIndexFunction.role!.roleArn, cfnGetAllIndexesFunction.role!.roleArn],
     "Description": "Rule 1"
   }])
 });
 
-const titleCollection = new opensearchserverless.CfnCollection(backend.stack, 'TitleCollection', {
-  name: 'title-collection',
+const itemCollection = new opensearchserverless.CfnCollection(backend.stack, 'ItemCollection', {
+  name: 'item-collection',
   type: 'VECTORSEARCH'
 });
 
-titleCollection.addDependency(networkPolicy);
-titleCollection.addDependency(dataAccessPolicy);
+itemCollection.addDependency(encryptionPolicy);
+itemCollection.addDependency(networkPolicy);
+itemCollection.addDependency(dataAccessPolicy);
 
 new aws_ssm.StringParameter(backend.stack, 'OpenSearchEndpointParam', {
   parameterName: `/${process.env.AWS_BRANCH}/OPENSEARCH_ENDPOINT`,
-  stringValue: titleCollection.attrCollectionEndpoint
+  stringValue: itemCollection.attrCollectionEndpoint
 });
 
 const s3Bucket = backend.storage.resources.bucket;
 
 s3Bucket.addEventNotification(
   EventType.OBJECT_CREATED,
-  new LambdaDestination(cfnIngestTitlesFunction),
+  new LambdaDestination(cfnIngestItemsFunction),
   {
     prefix: 'assets/',
   }
@@ -139,7 +154,7 @@ const assetsPath = restAPI.root.addResource('assets', {
   },
 });
 
-const relatedTitlesPath = restAPI.root.addResource("related-titles", {
+const relatedItemsPath = restAPI.root.addResource("related-items", {
   defaultMethodOptions: {
     authorizationType: AuthorizationType.NONE,
   },
@@ -150,11 +165,49 @@ const relatedTitlesPath = restAPI.root.addResource("related-titles", {
   },
 });
 
-const relatedTitlesLambdaIntegration = new LambdaIntegration(
-  cfnFindRelatedTitlesFunction
+const relatedItemsLambdaIntegration = new LambdaIntegration(
+  cfnFindRelatedItemsFunction
 );
 
-relatedTitlesPath.addMethod("POST", relatedTitlesLambdaIntegration, {
+relatedItemsPath.addMethod("POST", relatedItemsLambdaIntegration, {
+  authorizationType: AuthorizationType.NONE,
+});
+
+const createIndexPath = restAPI.root.addResource("create-index", {
+  defaultMethodOptions: {
+    authorizationType: AuthorizationType.NONE,
+  },
+  defaultCorsPreflightOptions: {
+    allowOrigins: ["*"],
+    allowMethods: Cors.ALL_METHODS,
+    allowHeaders: Cors.DEFAULT_HEADERS,
+  },
+});
+
+const createIndexLambdaIntegration = new LambdaIntegration(
+  cfnCreateIndexFunction
+);
+
+createIndexPath.addMethod("POST", createIndexLambdaIntegration, {
+  authorizationType: AuthorizationType.NONE,
+});
+
+const getAllIndexesPath = restAPI.root.addResource("get-all-indexes", {
+  defaultMethodOptions: {
+    authorizationType: AuthorizationType.NONE,
+  },
+  defaultCorsPreflightOptions: {
+    allowOrigins: ["*"],
+    allowMethods: Cors.ALL_METHODS,
+    allowHeaders: Cors.DEFAULT_HEADERS,
+  },
+});
+
+const getAllIndexesLambdaIntegration = new LambdaIntegration(
+  cfnGetAllIndexesFunction
+);
+
+getAllIndexesPath.addMethod("POST", getAllIndexesLambdaIntegration, {
   authorizationType: AuthorizationType.NONE,
 });
 
@@ -195,7 +248,7 @@ const dynamoJobStatusPolicy = new PolicyStatement({
 });
 
 const ssmPolicy = new PolicyStatement({
-  actions: ["ssm:GetParametersByPath"],
+  actions: ["ssm:GetParametersByPath", "ssm:GetParameter"],
   resources: ["*"], // You might want to restrict this to specific model ARNs in production
 });
 
@@ -204,17 +257,46 @@ const opensearchPolicy = new PolicyStatement({
   resources: ["*"], // You might want to restrict this to specific model ARNs in production
 });
 
-cfnIngestTitlesFunction.addToRolePolicy(dynamoJobStatusPolicy);
-cfnIngestTitlesFunction.addToRolePolicy(ssmPolicy);
-cfnIngestTitlesFunction.addToRolePolicy(s3Policy);
-cfnIngestTitlesFunction.addToRolePolicy(bedrockPolicy);
-cfnIngestTitlesFunction.addToRolePolicy(opensearchPolicy);
+cfnIngestItemsFunction.addToRolePolicy(dynamoJobStatusPolicy);
+cfnIngestItemsFunction.addToRolePolicy(ssmPolicy);
+cfnIngestItemsFunction.addToRolePolicy(s3Policy);
+cfnIngestItemsFunction.addToRolePolicy(bedrockPolicy);
+cfnIngestItemsFunction.addToRolePolicy(opensearchPolicy);
 
-cfnFindRelatedTitlesFunction.addToRolePolicy(dynamoJobStatusPolicy);
-cfnFindRelatedTitlesFunction.addToRolePolicy(ssmPolicy);
-cfnFindRelatedTitlesFunction.addToRolePolicy(s3Policy);
-cfnFindRelatedTitlesFunction.addToRolePolicy(bedrockPolicy);
-cfnFindRelatedTitlesFunction.addToRolePolicy(opensearchPolicy);
+const dynamoIndexConfigPolicy = new PolicyStatement({
+  actions: ["dynamodb:GetItem"],
+  resources: ["*"],
+});
+
+cfnIngestItemsFunction.addToRolePolicy(dynamoIndexConfigPolicy);
+
+cfnFindRelatedItemsFunction.addToRolePolicy(dynamoJobStatusPolicy);
+cfnFindRelatedItemsFunction.addToRolePolicy(ssmPolicy);
+cfnFindRelatedItemsFunction.addToRolePolicy(s3Policy);
+cfnFindRelatedItemsFunction.addToRolePolicy(bedrockPolicy);
+cfnFindRelatedItemsFunction.addToRolePolicy(opensearchPolicy);
+
+cfnCreateIndexFunction.addToRolePolicy(opensearchPolicy);
+cfnCreateIndexFunction.addToRolePolicy(ssmPolicy);
+cfnCreateIndexFunction.addToRolePolicy(dynamoJobStatusPolicy);
+
+cfnGetAllIndexesFunction.addToRolePolicy(opensearchPolicy);
+cfnGetAllIndexesFunction.addToRolePolicy(ssmPolicy);
+
+// Add DynamoDB permissions to authenticated users for direct table access
+backend.auth.resources.authenticatedUserIamRole.addToPrincipalPolicy(
+  new PolicyStatement({
+    actions: [
+      "dynamodb:Query",
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:Scan"
+    ],
+    resources: [
+      "*"
+    ]
+  })
+);
 
 // add outputs to the configuration file
 backend.addOutput({
@@ -227,6 +309,10 @@ backend.addOutput({
         region: Stack.of(restAPI).region,
         apiName: restAPI.restApiName,
       },
+    },
+    tables: {
+      ProcessingQueue: backend.data.resources.tables["ProcessingQueue"].tableName,
+      IndexConfig: backend.data.resources.tables["IndexConfig"].tableName,
     },
   },
 });
