@@ -8,7 +8,12 @@ While this solution was built to group related film titles, you may use it to gr
 
 **⚠️ Disclaimer: This code is intended for experimentation purposes and to demonstrate the art of the possible. Please conduct thorough due diligence, security reviews, and testing before deploying in production environments.**
 
-## Features
+## Set up
+
+### Development setup
+
+Create a .env.local file with a single line
+AWS_BRANCH=<enter your identifier>
 
 ### Step 1: Create the Index
 
