@@ -10,10 +10,16 @@ While this solution was built to group related film titles, you may use it to gr
 
 ## Set up
 
+### Prerequisites
+
+- Enable model access in Amazon Bedrock
+- Python installed if you want to build/deploy locally
+- Node
+
 ### Development setup
 
 Create a .env.local file with a single line
-AWS_BRANCH=<enter your identifier>
+AWS_BRANCH=enter your identifier
 
 ### Step 1: Create the Index
 
